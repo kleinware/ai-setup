@@ -59,15 +59,39 @@ if ! git rebase "$TARGET" >/dev/null 2>&1; then
   fail "status=failed reason=conflicts source=$SOURCE target=$TARGET head=$(short_sha HEAD) rolled_back=no backup=$BACKUP_REF"
 fi
 
-git switch -q "$TARGET" >/dev/null 2>&1 \
-  || fail "status=failed reason=switch-failed source=$SOURCE target=$TARGET head=$(short_sha "$SOURCE") backup=$BACKUP_REF"
+TARGET_WT=""
+last_wt=""
+while IFS= read -r line; do
+  case "$line" in
+    "worktree "*) last_wt="${line#worktree }" ;;
+    "branch refs/heads/$TARGET")
+      TARGET_WT="$last_wt"
+      break
+      ;;
+  esac
+done < <(git worktree list --porcelain)
 
 TARGET_BEFORE="$(git rev-parse "refs/heads/$TARGET")"
-if ! git merge --ff-only "$SOURCE" >/dev/null 2>&1; then
-  git reset --hard "$TARGET_BEFORE" >/dev/null 2>&1
-  fail "status=failed reason=ff-merge-failed source=$SOURCE target=$TARGET head=$(short_sha HEAD) rolled_back=yes backup=$BACKUP_REF"
+if [ -n "$TARGET_WT" ]; then
+  if ! git -C "$TARGET_WT" merge --ff-only "$SOURCE" >/dev/null 2>&1; then
+    if [ "$(git rev-parse "refs/heads/$TARGET")" != "$TARGET_BEFORE" ]; then
+      git -C "$TARGET_WT" reset --hard "$TARGET_BEFORE" >/dev/null 2>&1
+      rolled="yes"
+    else
+      rolled="no"
+    fi
+    fail "status=failed reason=ff-merge-failed source=$SOURCE target=$TARGET head=$(short_sha HEAD) rolled_back=$rolled backup=$BACKUP_REF"
+  fi
+else
+  git switch -q "$TARGET" >/dev/null 2>&1 \
+    || fail "status=failed reason=switch-failed source=$SOURCE target=$TARGET head=$(short_sha "$SOURCE") backup=$BACKUP_REF"
+  if ! git merge --ff-only "$SOURCE" >/dev/null 2>&1; then
+    git reset --hard "$TARGET_BEFORE" >/dev/null 2>&1
+    fail "status=failed reason=ff-merge-failed source=$SOURCE target=$TARGET head=$(short_sha HEAD) rolled_back=yes backup=$BACKUP_REF"
+  fi
 fi
 
 git update-ref -d "$BACKUP_REF" >/dev/null 2>&1
 MERGED="$(short_sha "refs/heads/$TARGET")"
-echo "status=success action=ff-merge source=$SOURCE target=$TARGET head=$MERGED conflicts=none worktree=$TARGET"
+FINAL_WT="$(git branch --show-current)"
+echo "status=success action=ff-merge source=$SOURCE target=$TARGET head=$MERGED conflicts=none worktree=$FINAL_WT"

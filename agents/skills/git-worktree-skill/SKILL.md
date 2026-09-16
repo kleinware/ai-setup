@@ -29,7 +29,7 @@ The script prints exactly one key=value line and nothing else (no git chatter), 
   - `dirty-tree` (+ `source=`, `target=`, `head=`, and the `files:` block)
   - `conflicts` (+ `source=`, `target=`, `head=`, `rolled_back=<yes|no>`, `backup=<ref>`)
   - `switch-failed` (+ `source=`, `target=`, `head=`, `backup=<ref>`)
-  - `ff-merge-failed` (+ `source=`, `target=`, `head=`, `rolled_back=yes`, `backup=<ref>`)
+  - `ff-merge-failed` (+ `source=`, `target=`, `head=`, `rolled_back=<yes|no>`, `backup=<ref>`)
 
 ## Behavior
 
@@ -37,5 +37,5 @@ The script prints exactly one key=value line and nothing else (no git chatter), 
 - Refuses if HEAD is detached, the target branch does not exist, or a rebase is already in progress.
 - On merge conflicts: aborts the rebase and rolls HEAD back to exactly where it was before the attempt.
 - Before rebasing, records a backup ref (`refs/backup/pre-rebase-<timestamp>`); kept on failure and referenced in the output, deleted on success.
-- On a clean rebase: checks out the target branch and fast-forwards it onto the rebased branch; the worktree is left on the target branch.
+- On a clean rebase: fast-forwards the target branch onto the rebased branch. If the target branch is checked out in another worktree, the merge runs there and the current worktree stays on the source branch; otherwise the target branch is checked out in the current worktree and left there.
 - If the current branch already is the target branch, reports success with no changes made.
