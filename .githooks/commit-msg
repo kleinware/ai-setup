@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+ALLOWED_PREFIXES=("agents" "project")
+
+subject="$(grep -v '^#' "$1" | awk 'NF { print; exit }')"
+
+for prefix in "${ALLOWED_PREFIXES[@]}"; do
+  if [[ "$subject" == "${prefix}: "* ]]; then
+    exit 0
+  fi
+done
+
+echo "error: commit message must start with one of the allowed prefixes: ${ALLOWED_PREFIXES[*]}: " >&2
+echo "       got: $subject" >&2
+exit 1
