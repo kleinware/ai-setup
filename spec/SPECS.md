@@ -25,8 +25,17 @@ specs:
   - Files under /workspace and /home/agent persist across docker compose up -d --build of the same project.
   - The SSH host key in /var/lib/herdr-ssh is preserved, so the client known_hosts entry for the project
     remains valid after recreation.
+- id: isolation_script_output_ls-running-projects
+  description: The ls command lists all currently running AI project containers.
+  motivation: Users need to see which agent containers are running and their status without digging through
+    docker ps.
+  acceptance_criteria:
+  - Running ./ai-repo.sh ls prints a header line (PROJECT, PORT, STATUS) followed by one line per running
+    ai-* compose container with its project name, host SSH port, and status.
+  - Compose projects whose name does not start with ai- are not listed.
+  - When no AI project containers are running, the command prints 'No running AI project containers.'
 - id: isolation_script_output_next-steps
-  description: On success, ai-repo.sh prints the SSH config block for the project and the herdr machine
+  description: On success, the up command prints the SSH config block for the project and the herdr machine
     add command.
   motivation: Users need the exact host alias and herdr registration to use the container; nested herdr
     sessions are not allowed, so the host herdr must register the container.
@@ -39,17 +48,19 @@ specs:
   motivation: The container accepts only that public key, so starting a container without the key would
     make it unreachable.
   acceptance_criteria:
-  - With no ~/.ssh/herdr-container.pub and no SSH_PUBLIC_KEY override, ./ai-repo.sh test-proj 2221 exits
-    non-zero and prints 'SSH public key not found'.
+  - With no ~/.ssh/herdr-container.pub and no SSH_PUBLIC_KEY override, ./ai-repo.sh up test-proj 2221
+    exits non-zero and prints 'SSH public key not found'.
   - SSH_PUBLIC_KEY=/path/to/key.pub overrides the default key path.
 - id: isolation_script_setup_validates-args
-  description: ai-repo.sh validates the project name and SSH port before running docker compose.
+  description: ai-repo.sh validates its command and arguments before running docker compose.
   motivation: Compose project names must be safe identifiers, and binding invalid or privileged ports
     would fail or be unsafe.
   acceptance_criteria:
+  - The up command requires exactly two arguments (project name and SSH port); any other count prints
+    usage and exits non-zero.
   - A project name not matching ^[a-z0-9][a-z0-9_-]*$ exits non-zero with 'Invalid project name'.
   - A port outside 1024-65535 exits non-zero with 'SSH port must be between 1024 and 65535'.
-  - Any argument count other than two prints usage and exits non-zero.
+  - An unknown command prints usage and exits non-zero.
 - id: tooling_spec-manager_specs_agent-output-yaml
   description: Structured output the skill returns to the agent is YAML.
   motivation: YAML is more token-efficient than JSON for agent-consumed output, matching the YAML-on-disk
