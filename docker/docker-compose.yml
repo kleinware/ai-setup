@@ -1,0 +1,37 @@
+services:
+  dev:
+    image: local/ai-repo:latest
+    build:
+      context: .
+
+    hostname: ai-${COMPOSE_PROJECT_NAME}
+
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:${SSH_PORT:?SSH_PORT is required}:2222"
+
+    volumes:
+      - workspace:/workspace
+      - agent-home:/home/agent
+      - ssh-host-keys:/var/lib/herdr-ssh
+
+      - type: bind
+        source: ${SSH_PUBLIC_KEY:?SSH_PUBLIC_KEY is required}
+        target: /etc/ssh/authorized_keys.src
+        read_only: true
+
+    environment:
+      HOME: /home/agent
+      TERM: xterm-256color
+
+    security_opt:
+      - no-new-privileges:true
+
+    pids_limit: 512
+    mem_limit: 16g
+
+volumes:
+  workspace:
+  agent-home:
+  ssh-host-keys:
