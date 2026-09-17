@@ -6,8 +6,11 @@ usage() {
 Usage: ai-repo <command> [args]
 
 Commands:
-  up <project-name> <ssh-port>  Build and start the project container
-  ls                            List running AI project containers
+  up <ssh-port>  Build and start the project container
+  ls            List running AI project containers
+
+Must be run from the git root of a worktree whose folder is named 'main'.
+The project name is the name of the folder containing 'main'.
 EOF
     exit 1
 }
@@ -18,10 +21,27 @@ shift
 
 case "$COMMAND" in
     up)
-        [[ $# -eq 2 ]] || usage
+        [[ $# -eq 1 ]] || usage
 
-        PROJECT="$1"
-        SSH_PORT="$2"
+        SSH_PORT="$1"
+
+        # Must be run from the git root, and that folder must be named 'main'.
+        CWD="$(pwd -P)"
+        if [[ "$(basename -- "$CWD")" != "main" ]]; then
+            echo "Must be run from a folder named 'main': $CWD" >&2
+            exit 1
+        fi
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "Must be run from a git worktree: $CWD" >&2
+            exit 1
+        fi
+        if [[ "$(git rev-parse --show-toplevel)" != "$CWD" ]]; then
+            echo "Must be run from the git root, not a subdirectory: $CWD" >&2
+            exit 1
+        fi
+
+        PROJECT_DIR="$(dirname -- "$CWD")"
+        PROJECT="$(basename -- "$PROJECT_DIR")"
 
         # Validate the Compose project name.
         if [[ ! "$PROJECT" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
@@ -36,14 +56,26 @@ case "$COMMAND" in
             exit 1
         fi
 
+        # Create the worktrees directory next to 'main' if it doesn't exist.
+        mkdir -p "${PROJECT_DIR}/worktrees"
+
         # Resolve paths relative to the script, not the current directory.
         SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
         export SSH_PORT
         export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
+        export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
+        export PROJECT_DIR
+        export HOST_UID="$(id -u)"
+        export HOST_GID="$(id -g)"
 
         if [[ ! -f "$SSH_PUBLIC_KEY" ]]; then
             echo "SSH public key not found: $SSH_PUBLIC_KEY" >&2
+            exit 1
+        fi
+
+        if [[ ! -f "$GITCONFIG" ]]; then
+            echo "gitconfig not found: $GITCONFIG" >&2
             exit 1
         fi
 

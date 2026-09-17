@@ -17,6 +17,14 @@ specs:
   - On container startup, start-container copies it to /etc/ssh/authorized_keys/agent owned by agent:agent
     with mode 600.
   - SSH from the host with the matching private key succeeds.
+- id: isolation_container_persistence_project-folder-workspace
+  description: The project folder containing 'main' and 'worktrees' is bind-mounted into the container
+    as /workspace.
+  motivation: The agent works directly on the project's files, and opencode worktrees created under /workspace/worktrees
+    land in the host's <project>/worktrees directory.
+  acceptance_criteria:
+  - docker compose binds the parent of the 'main' folder to /workspace.
+  - Inside the container, /workspace contains the main and worktrees folders.
 - id: isolation_container_persistence_survives-recreate
   description: The agent workspace, home directory, and SSH host key survive container recreation.
   motivation: Rebuilding or recreating a container must not lose work or change the SSH host key that
@@ -25,6 +33,21 @@ specs:
   - Files under /workspace and /home/agent persist across docker compose up -d --build of the same project.
   - The SSH host key in /var/lib/herdr-ssh is preserved, so the client known_hosts entry for the project
     remains valid after recreation.
+- id: isolation_container_setup_gitconfig-mounted
+  description: The host ~/.gitconfig is bind-mounted read-only into the container as /home/agent/.gitconfig.
+  motivation: The agent needs the host user's git identity and settings so that git operations inside
+    the container behave the same as on the host.
+  acceptance_criteria:
+  - The host gitconfig is mounted read-only at /home/agent/.gitconfig.
+  - ai-repo.sh up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
+- id: isolation_container_setup_host-user-group
+  description: The container's agent user and group use the host user's UID and GID.
+  motivation: Files created by the agent inside bind-mounted directories must be owned by the host user,
+    so project files stay usable on the host without permission fixes.
+  acceptance_criteria:
+  - start-container sets the agent user's UID to HOST_UID and its primary group GID to HOST_GID before
+    starting sshd.
+  - In a running container, id reports agent with the host user's UID and GID.
 - id: isolation_script_output_ls-running-projects
   description: The ls command lists all currently running AI project containers.
   motivation: Users need to see which agent containers are running and their status without digging through
@@ -43,22 +66,32 @@ specs:
   - The output includes a Host ai-<project> block with HostName 127.0.0.1, Port <ssh-port>, User agent,
     IdentityFile <key>, and IdentitiesOnly yes.
   - The output includes herdr machine add ai-<project> --label "<project>".
+- id: isolation_script_setup_derives-project
+  description: ai-repo.sh up derives the project name from the working directory and creates the worktrees
+    directory.
+  motivation: Each project is laid out as <project>/main plus <project>/worktrees, so the script can derive
+    the project from the layout instead of taking it as an argument.
+  acceptance_criteria:
+  - When run from the git root named 'main', up uses the parent folder's name as the compose project name.
+  - up creates <project>/worktrees next to main if it does not already exist.
 - id: isolation_script_setup_requires-ssh-key
-  description: ai-repo.sh exits with an error if the SSH public key file does not exist.
+  description: ai-repo.sh up exits with an error if the SSH public key file does not exist.
   motivation: The container accepts only that public key, so starting a container without the key would
     make it unreachable.
   acceptance_criteria:
-  - With no ~/.ssh/herdr-container.pub and no SSH_PUBLIC_KEY override, ./ai-repo.sh up test-proj 2221
-    exits non-zero and prints 'SSH public key not found'.
+  - With no ~/.ssh/herdr-container.pub and no SSH_PUBLIC_KEY override, running up from the project's 'main'
+    git root exits non-zero and prints 'SSH public key not found'.
   - SSH_PUBLIC_KEY=/path/to/key.pub overrides the default key path.
 - id: isolation_script_setup_validates-args
-  description: ai-repo.sh validates its command and arguments before running docker compose.
-  motivation: Compose project names must be safe identifiers, and binding invalid or privileged ports
-    would fail or be unsafe.
+  description: ai-repo.sh up validates its argument and working directory before running docker compose.
+  motivation: The compose project name is derived from the folder layout and must be a safe identifier,
+    the host SSH port must be a valid user port, and the script only works when invoked from the correct
+    location.
   acceptance_criteria:
-  - The up command requires exactly two arguments (project name and SSH port); any other count prints
-    usage and exits non-zero.
-  - A project name not matching ^[a-z0-9][a-z0-9_-]*$ exits non-zero with 'Invalid project name'.
+  - The up command requires exactly one argument (SSH port); any other count prints usage and exits non-zero.
+  - A working directory not named 'main' exits non-zero with 'Must be run from a folder named 'main'.
+  - A working directory that is not the git root of a worktree exits non-zero.
+  - A derived project name not matching ^[a-z0-9][a-z0-9_-]*$ exits non-zero with 'Invalid project name'.
   - A port outside 1024-65535 exits non-zero with 'SSH port must be between 1024 and 65535'.
   - An unknown command prints usage and exits non-zero.
 - id: tooling_spec-manager_specs_agent-output-yaml

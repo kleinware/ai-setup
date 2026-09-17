@@ -26,11 +26,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # OpenCode
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
 
-# Dedicated development user
-RUN useradd -m -s /bin/bash agent \
+# Dedicated development user (UID/GID are matched to the host at startup)
+# The opencode config dirs must exist in the image so docker does not create
+# the mount targets as root.
+RUN userdel -r ubuntu \
+    && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace \
-    && chown agent:agent /workspace
+    && mkdir -p /workspace /home/agent/.config/opencode \
+    && chown -R agent:agent /home/agent/.config
 
 # Install Herdr using its official installer
 RUN su - agent -c \
@@ -59,6 +62,19 @@ RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
 RUN printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \
+    '# Match the container user/group to the host user/group.' \
+    'if [ "$(id -u agent)" != "$HOST_UID" ]; then' \
+    '    HOLDER="$(getent passwd "$HOST_UID" | cut -d: -f1)"' \
+    '    [ -n "$HOLDER" ] && [ "$HOLDER" != agent ] && userdel "$HOLDER"' \
+    '    usermod -u "$HOST_UID" agent' \
+    'fi' \
+    'if [ "$(id -g agent)" != "$HOST_GID" ]; then' \
+    '    HOLDER="$(getent group "$HOST_GID" | cut -d: -f1)"' \
+    '    [ -n "$HOLDER" ] && [ "$HOLDER" != agent ] && groupdel "$HOLDER"' \
+    '    groupmod -g "$HOST_GID" agent' \
+    'fi' \
+    'chown agent:agent /home/agent' \
+    'chown agent:agent /home/agent/.config /home/agent/.config/opencode' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
     'if [ ! -f "$KEY" ]; then' \
     '    ssh-keygen -q -t ed25519 -N "" -f "$KEY"' \
