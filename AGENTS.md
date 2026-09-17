@@ -14,3 +14,10 @@
 - `agents/skills/<name>/` — one skill per folder: `SKILL.md` (frontmatter + usage) plus bundled scripts.
 - `~/.agents` is a symlink to `agents/` — edit skills in this repo.
 - `.githooks/` — hook sources; `setup.sh` symlinks them into `.git/hooks/`.
+- `spec/SPECS.md` — canonical specs, one YAML file for all specs (managed via the `spec-manager` skill).
+
+## Spec taxonomy
+
+- areas: tooling
+- components: spec-manager
+- sections: specs
