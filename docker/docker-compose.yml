@@ -39,6 +39,11 @@ services:
         target: /home/agent/.config/opencode/skills
         read_only: true
 
+      - type: bind
+        source: ./herdr_config.toml
+        target: /home/agent/.config/herdr/config.toml
+        read_only: true
+
     environment:
       HOME: /home/agent
       TERM: xterm-256color

@@ -1,0 +1,5 @@
+[experimental]
+pane_history = true
+
+[worktrees]
+directory = "/workspace/worktrees"

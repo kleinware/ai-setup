@@ -27,12 +27,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
 
 # Dedicated development user (UID/GID are matched to the host at startup)
-# The opencode config dirs must exist in the image so docker does not create
+# The config dirs must exist in the image so docker does not create
 # the mount targets as root.
 RUN userdel -r ubuntu \
     && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace /home/agent/.config/opencode \
+    && mkdir -p /workspace /home/agent/.config/opencode /home/agent/.config/herdr \
     && chown -R agent:agent /home/agent/.config
 
 # Install Herdr using its official installer
@@ -74,7 +74,7 @@ RUN printf '%s\n' \
     '    groupmod -g "$HOST_GID" agent' \
     'fi' \
     'chown agent:agent /home/agent' \
-    'chown agent:agent /home/agent/.config /home/agent/.config/opencode' \
+    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
     'if [ ! -f "$KEY" ]; then' \
     '    ssh-keygen -q -t ed25519 -N "" -f "$KEY"' \
