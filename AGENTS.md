@@ -18,6 +18,6 @@
 
 ## Spec taxonomy
 
-- areas: tooling
-- components: spec-manager
-- sections: specs
+- areas: isolation, tooling
+- components: container, script, spec-manager
+- sections: access, output, persistence, setup, specs
