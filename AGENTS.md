@@ -19,6 +19,14 @@
 
 ## Spec taxonomy
 
-- areas: isolation, tooling
-- components: container, script, spec-manager
-- sections: access, output, persistence, setup, specs
+- isolation
+  - container
+    - access
+    - persistence
+    - setup
+  - script
+    - output
+    - setup
+- tooling
+  - spec-manager
+    - specs

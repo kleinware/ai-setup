@@ -64,9 +64,26 @@ def repo_root(cwd):
 
 
 def parse_taxonomy(agents_path):
-    """Parse '## Spec taxonomy' bullets from AGENTS.md.
+    """Parse the '## Spec taxonomy' section from AGENTS.md.
 
-    Returns {'area': set, 'component': set, 'section': set} or None.
+    Preferred format is a nested bullet tree:
+
+        - area
+          - component
+            - section
+
+    The legacy flat list format is also accepted:
+
+        - areas: a, b
+        - components: c, d
+        - sections: e, f
+
+    Returns a dict of declared terms:
+        'area': set of area names
+        'area_component': set of (area, component) pairs
+        'area_component_section': set of (area, component, section) triples
+    A key is omitted when its level is not declared, so callers skip that
+    check. Returns None if the heading is absent.
     """
     try:
         with open(agents_path, encoding="utf-8") as f:
@@ -86,14 +103,64 @@ def parse_taxonomy(agents_path):
         if re.match(r"^(#{1,6})\s", lines[j]):
             end = j
             break
+    section = lines[start + 1:end]
     key_map = {"areas": "area", "components": "component", "sections": "section"}
-    taxonomy = {}
-    for line in lines[start + 1:end]:
+    flat = {}
+    for line in section:
         m = re.match(r"^\s*-\s*([A-Za-z]+)\s*:\s*(.*)$", line)
-        if not m or m.group(1).lower() not in key_map:
-            continue
-        values = [v.strip().strip("`").strip() for v in m.group(2).split(",")]
-        taxonomy[key_map[m.group(1).lower()]] = set(v for v in values if v)
+        if m and m.group(1).lower() in key_map:
+            values = [v.strip().strip("`").strip() for v in m.group(2).split(",")]
+            flat[key_map[m.group(1).lower()]] = set(v for v in values if v)
+    if flat:
+        areas = flat.get("area")
+        components = flat.get("component")
+        sections = flat.get("section")
+        taxonomy = {}
+        if areas:
+            taxonomy["area"] = areas
+        if areas and components:
+            taxonomy["area_component"] = {(a, c) for a in areas for c in components}
+        if areas and components and sections:
+            taxonomy["area_component_section"] = {
+                (a, c, s) for a in areas for c in components for s in sections
+            }
+        return taxonomy
+    bullets = []
+    for line in section:
+        m = re.match(r"^(\s*)-\s+(.+?)\s*$", line)
+        if m:
+            name = m.group(2).strip().strip("`").strip()
+            if name:
+                bullets.append((len(m.group(1).expandtabs(2)), name))
+    if not bullets:
+        return None
+    base = min(indent for indent, _ in bullets)
+    root = {}
+    stack = []
+    for indent, name in bullets:
+        indent -= base
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        if not stack:
+            root[name] = {}
+            stack.append([indent, 0, root[name]])
+        elif stack[-1][1] == 0:
+            parent = stack[-1][2]
+            if name not in parent:
+                parent[name] = set()
+            stack.append([indent, 1, parent[name]])
+        elif stack[-1][1] == 1:
+            stack[-1][2].add(name)
+            stack.append([indent, 2, None])
+    taxonomy = {
+        "area": set(root),
+        "area_component": {(a, c) for a, comps in root.items() for c in comps},
+    }
+    triples = {
+        (a, c, s) for a, comps in root.items() for c, secs in comps.items() for s in secs
+    }
+    if triples:
+        taxonomy["area_component_section"] = triples
     return taxonomy or None
 
 
@@ -194,13 +261,33 @@ def do_write(args, spec_path, agents_path):
     taxonomy = parse_taxonomy(agents_path)
     if taxonomy:
         parts = args.id.split("_")
+        area_ok = "area" not in taxonomy or parts[0] in taxonomy["area"]
+        comp_ok = "area_component" not in taxonomy or (
+            parts[0],
+            parts[1],
+        ) in taxonomy["area_component"]
+        sect_ok = "area_component_section" not in taxonomy or (
+            parts[0],
+            parts[1],
+            parts[2],
+        ) in taxonomy["area_component_section"]
         tprobs = []
-        for name, idx in (("area", 0), ("component", 1), ("section", 2)):
-            allowed = taxonomy.get(name)
-            if allowed and parts[idx] not in allowed:
-                tprobs.append(
-                    "{} '{}' is not declared in the AGENTS.md spec taxonomy".format(name, parts[idx])
+        if not area_ok:
+            tprobs.append(
+                "area '{}' is not declared in the AGENTS.md spec taxonomy".format(parts[0])
+            )
+        elif not comp_ok:
+            tprobs.append(
+                "component '{}' is not declared under area '{}' in the AGENTS.md spec taxonomy".format(
+                    parts[1], parts[0]
                 )
+            )
+        elif not sect_ok:
+            tprobs.append(
+                "section '{}' is not declared under component '{}' in area '{}' in the AGENTS.md spec taxonomy".format(
+                    parts[2], parts[1], parts[0]
+                )
+            )
         if tprobs:
             fail("taxonomy-unknown", {"id": args.id}, ("problems", tprobs))
     specs, err, detail = load_store(spec_path)

@@ -37,17 +37,25 @@ The agent composes the ID from the project's declared taxonomy (below).
 
 ## Spec taxonomy in AGENTS.md
 
-Each repo declares its vocabulary in its `AGENTS.md` under a `## Spec taxonomy` heading, and keeps it up to date as new terms are created:
+Each repo declares its vocabulary in its `AGENTS.md` under a `## Spec taxonomy` heading, and keeps it up to date as new terms are created. The taxonomy is a tree: areas contain components, and components contain sections, so which terms combine is visible:
 
 ```markdown
 ## Spec taxonomy
 
-- areas: interface, data
-- components: tui, cli
-- sections: results, input
+- interface
+  - tui
+    - results
+    - input
+  - cli
+    - results
+- data
+  - store
+    - persistence
 ```
 
-Before creating a spec whose ID uses a new area, component, or section, add that term to the taxonomy first. The `write` action validates the first three ID parts against these lists; if the heading is absent, the check is skipped (`taxonomy=skipped`).
+The legacy flat list format (`- areas: ...`, `- components: ...`, `- sections: ...`) is still accepted and treats the three levels as independent lists.
+
+Before creating a spec whose ID uses a new area, component, or section, add that term to the tree first. The `write` action validates the first three ID parts against the tree: the area, then the component under that area, then the section under that component. If the heading is absent, the check is skipped (`taxonomy=skipped`).
 
 ## Actions
 
@@ -74,7 +82,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `invalid-id` — id does not match `{area}_{component}_{section}_{result}`
   - `yaml-error` — the store is not valid YAML
   - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria`
-  - `taxonomy-unknown` — an area/component/section is not declared in AGENTS.md
+  - `taxonomy-unknown` — an area/component/section is not declared in the AGENTS.md spec taxonomy tree
   - `not-found` — read of an unknown id (`known=` lists existing ids)
   - `spec-file-missing` — `spec/SPECS.md` does not exist (read)
   - `malformed-store` — `spec/SPECS.md` is not a `specs:` list of mappings
