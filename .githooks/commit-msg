@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-ALLOWED_PREFIXES=("agents" "project" "isolation")
+ALLOWED_PREFIXES=("agents" "project" "isolation" "models")
 
 subject="$(grep -v '^#' "$1" | awk 'NF { print; exit }')"
 

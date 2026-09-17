@@ -6,6 +6,7 @@
   - `agents: ` — agent skills and subagents under `agents/`
   - `project: ` — repo-level tooling and docs (`.githooks/`, `setup.sh`, `AGENTS.md`, `README.md`)
   - `isolation: ` — docker container isolation under `docker/`
+  - `models: ` — model serving and benchmarking under `models/`
   - This list maps 1:1 with `ALLOWED_PREFIXES` in `.githooks/commit-msg`.
 - After cloning, run `./setup.sh` to install git hooks.
 
