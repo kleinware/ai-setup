@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,20 +8,16 @@ const SKILL_DIR = join(import.meta.dir, "..");
 const SCRIPT = join(SKILL_DIR, "spec.ts");
 const FIXTURES = join(import.meta.dir, "fixtures");
 
-function run(fix: string | null, args: string[]): { code: number; out: string } {
+function run(fix: string | null, args: string[]): { code: number; out: string; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "spec-tst-"));
   if (fix) cpSync(join(FIXTURES, fix), dir, { recursive: true });
   try {
-    try {
-      const out = execFileSync("bun", [SCRIPT, "--spec-dir", dir, ...args], { encoding: "utf-8" });
-      return { code: 0, out: out as string };
-    } catch (e: unknown) {
-      const err = e as { status?: number; stdout?: string; stderr?: string };
-      const out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
-      return { code: err.status ?? 1, out };
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    const out = execFileSync("bun", [SCRIPT, "--spec-dir", dir, ...args], { encoding: "utf-8" });
+    return { code: 0, out: out as string, dir };
+  } catch (e: unknown) {
+    const err = e as { status?: number; stdout?: string; stderr?: string };
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    return { code: err.status ?? 1, out, dir };
   }
 }
 
@@ -31,6 +27,7 @@ type Case = {
   args: string[];
   expectCode: number;
   expectContains: string[];
+  expectFile?: { name: string; contains: string[] };
 };
 
 const cases: Case[] = [
@@ -42,21 +39,32 @@ const cases: Case[] = [
     expectContains: ["action=read", "a_b_c_one", "first spec"],
   },
   {
-    name: "write creates new spec",
+    name: "write creates new spec in a new leaf file",
     fix: "h-write-create",
     args: ["write", "--id", "a_b_d_two", "--description", "second spec", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "pending"],
     expectCode: 0,
-    expectContains: ["action=create", "a_b_d_two"],
+    expectContains: ["action=create", "a_b_d_two", "path=a_b_d.spec.md"],
+  },
+  {
+    name: "write appends to a leaf file with a blank line between specs",
+    fix: "h-write-append",
+    args: ["write", "--id", "a_b_c_three", "--description", "third spec", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "pending"],
+    expectCode: 0,
+    expectContains: ["action=create", "a_b_c_three", "path=a_b_c.spec.md"],
+    expectFile: {
+      name: "a_b_c.spec.md",
+      contains: ["\n\n  - id: a_b_c_two", "\n\n  - id: a_b_c_three"],
+    },
   },
   {
     name: "write updates existing spec",
     fix: "h-write-update",
     args: ["write", "--id", "a_b_c_one", "--description", "first spec v2", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "done"],
     expectCode: 0,
-    expectContains: ["action=update", "a_b_c_one"],
+    expectContains: ["action=update", "a_b_c_one", "path=a_b_c.spec.md"],
   },
   {
-    name: "find returns matches",
+    name: "find returns matches across leaf files",
     fix: "h-find",
     args: ["find", "--query", "search"],
     expectCode: 0,
@@ -75,6 +83,27 @@ const cases: Case[] = [
     args: ["validate"],
     expectCode: 0,
     expectContains: ["has-status=false", "taxonomy=skipped"],
+  },
+  {
+    name: "validate passes with layers false",
+    fix: "h-layers-false",
+    args: ["validate"],
+    expectCode: 0,
+    expectContains: ["status=success", "has-status=false", "taxonomy=skipped"],
+  },
+  {
+    name: "write creates flat spec when layers false",
+    fix: "h-layers-false",
+    args: ["write", "--id", "flat-two", "--description", "second flat spec", "--motivation", "because", "--acceptance-criteria", "ok"],
+    expectCode: 0,
+    expectContains: ["action=create", "flat-two", "path=specs.spec.md"],
+  },
+  {
+    name: "write with layered id fails when layers false",
+    fix: "h-layers-false",
+    args: ["write", "--id", "a_b_c_one", "--description", "d", "--motivation", "m", "--acceptance-criteria", "ok"],
+    expectCode: 1,
+    expectContains: ["reason=invalid-id"],
   },
   {
     name: "read missing id fails",
@@ -140,6 +169,20 @@ const cases: Case[] = [
     expectContains: ["reason=config-invalid"],
   },
   {
+    name: "validate fails on invalid config (layers false with structure)",
+    fix: "s-layers-false-structure",
+    args: ["validate"],
+    expectCode: 1,
+    expectContains: ["reason=config-invalid", "must be omitted"],
+  },
+  {
+    name: "validate fails on invalid config (layers list without structure)",
+    fix: "s-layers-no-structure",
+    args: ["validate"],
+    expectCode: 1,
+    expectContains: ["reason=config-invalid", "structure is required"],
+  },
+  {
     name: "validate fails on status key when status disabled",
     fix: "s-status-disabled-key",
     args: ["validate"],
@@ -152,6 +195,20 @@ const cases: Case[] = [
     args: ["validate"],
     expectCode: 1,
     expectContains: ["reason=spec-file-missing"],
+  },
+  {
+    name: "validate fails on legacy single-file store",
+    fix: "s-legacy-store",
+    args: ["validate"],
+    expectCode: 1,
+    expectContains: ["reason=legacy-store"],
+  },
+  {
+    name: "validate fails when a spec is in the wrong leaf file",
+    fix: "s-wrong-file",
+    args: ["validate"],
+    expectCode: 1,
+    expectContains: ["reason=validate-failed", "belongs in 'a_b_c.spec.md'"],
   },
   {
     name: "validate fails on malformed store",
@@ -172,10 +229,20 @@ const cases: Case[] = [
 describe("spec-manager CLI", () => {
   for (const c of cases) {
     it(c.name, () => {
-      const { code, out } = run(c.fix, c.args);
-      expect(code).toBe(c.expectCode);
-      for (const s of c.expectContains) {
-        expect(out).toContain(s);
+      const { code, out, dir } = run(c.fix, c.args);
+      try {
+        expect(code).toBe(c.expectCode);
+        for (const s of c.expectContains) {
+          expect(out).toContain(s);
+        }
+        if (c.expectFile) {
+          const content = readFileSync(join(dir, c.expectFile.name), "utf8");
+          for (const s of c.expectFile.contains) {
+            expect(content).toContain(s);
+          }
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
     });
   }

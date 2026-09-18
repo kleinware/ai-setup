@@ -1,4 +1,5 @@
-// Manage spec entries stored as YAML in spec/SPECS.md at the repo root.
+// Manage spec entries stored as YAML in per-leaf files under spec/
+// (one <leaf>.spec.md file per taxonomy leaf; specs.spec.md when layers is false).
 //
 // Usage:
 //   spec.sh [--spec-dir <dir>] <action> [flags]
@@ -8,8 +9,8 @@
 //     find     --query <string>
 //     validate
 //
-// --spec-dir <dir> overrides the directory holding SPECS.md and .config.yaml
-// (default: <repo-root>/spec). Useful for tests.
+// --spec-dir <dir> overrides the directory holding the *.spec.md files and
+// .config.yaml (default: <repo-root>/spec). Useful for tests.
 //
 // Repo preferences live in spec/.config.yaml and are validated against
 // .config.schema.json in this skill directory on every action.
@@ -27,10 +28,10 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 
-const SPEC_FILE = "spec/SPECS.md";
 const CONFIG_FILE = "spec/.config.yaml";
 const SCHEMA_FILE = ".config.schema.json";
-const STATE_RE = /^[a-z0-9_]+$/;
+const STORE_GLOB = "*.spec.md";
+const FLAT_FILE = "specs.spec.md";
 const TERM_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_LAYERS = ["area", "component", "section"];
 
@@ -53,7 +54,7 @@ Actions:
   validate
 
 Flags:
-  --spec-dir <dir>  directory containing SPECS.md and .config.yaml (default: <repo-root>/spec)`;
+  --spec-dir <dir>  directory containing the *.spec.md files and .config.yaml (default: <repo-root>/spec)`;
 
 const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id"],
@@ -110,6 +111,10 @@ function idRegex(layers: string[]): RegExp {
   return new RegExp(`^[a-z0-9]+(?:-[a-z0-9]+)*(_[a-z0-9]+(?:-[a-z0-9]+)*){${layers.length}}$`);
 }
 
+function idPattern(layers: string[]): string {
+  return layers.length ? `{${layers.join("_")}}_result` : "a flat result term (no layers)";
+}
+
 function withDetail(extra: Record<string, unknown>, detail: string | null): Record<string, unknown> {
   return detail ? { ...extra, error: detail } : extra;
 }
@@ -152,6 +157,10 @@ function checkConfig(data: Record<string, unknown>): string[] {
           problems.push(
             "config: status must be false, a list of state strings, or a list of {state, description?} objects",
           );
+        } else if (e.instancePath === "/taxonomy/layers") {
+          problems.push(
+            "config: taxonomy.layers must be false or a non-empty list of unique layer names",
+          );
         }
         continue;
       }
@@ -172,7 +181,17 @@ function checkConfig(data: Record<string, unknown>): string[] {
   const tax = data.taxonomy;
   if (typeof tax === "object" && tax !== null && !Array.isArray(tax)) {
     const t = tax as Record<string, unknown>;
-    if (Array.isArray(t.layers)) checkStructure(t.structure, t.layers as string[], problems);
+    if (t.layers === false) {
+      if (t.structure !== undefined) {
+        problems.push("config: taxonomy.structure must be omitted when taxonomy.layers is false");
+      }
+    } else if (Array.isArray(t.layers)) {
+      if (t.structure === undefined) {
+        problems.push("config: taxonomy.structure is required when taxonomy.layers is a list");
+      } else {
+        checkStructure(t.structure, t.layers as string[], problems);
+      }
+    }
   }
   return problems;
 }
@@ -231,8 +250,12 @@ function deriveConfig(data: Record<string, unknown>): Config {
   const tax = data.taxonomy;
   if (typeof tax === "object" && tax !== null && !Array.isArray(tax)) {
     const t = tax as Record<string, unknown>;
-    if (Array.isArray(t.layers)) layers = t.layers as string[];
-    if (t.structure !== undefined) structure = t.structure as Record<string, unknown>;
+    if (t.layers === false) {
+      layers = [];
+    } else if (Array.isArray(t.layers)) {
+      layers = t.layers as string[];
+      if (t.structure !== undefined) structure = t.structure as Record<string, unknown>;
+    }
   }
   return { statusEnabled, states, layers, structure };
 }
@@ -263,24 +286,46 @@ function loadConfig(configPath: string): Config {
 }
 
 type Store = {
-  specs: Record<string, unknown>[] | null;
+  files: Record<string, Record<string, unknown>[]>;
   error: string | null;
   detail: string | null;
 };
 
-function loadStore(specPath: string): Store {
-  if (!fs.existsSync(specPath)) return { specs: null, error: "spec-file-missing", detail: null };
+function storeFileForId(id: string, cfg: Config): string {
+  if (cfg.layers.length === 0) return FLAT_FILE;
+  return id.split("_").slice(0, cfg.layers.length).join("_") + ".spec.md";
+}
+
+function listStoreFiles(specDir: string): string[] {
+  try {
+    return fs
+      .readdirSync(specDir)
+      .filter((f) => f.endsWith(".spec.md"))
+      .sort();
+  } catch (e) {
+    fail("io-error", { file: "spec/" + STORE_GLOB, error: errLine(e) });
+  }
+}
+
+function loadFile(specDir: string, name: string): {
+  specs: Record<string, unknown>[];
+  error: string | null;
+  detail: string | null;
+} {
   let data: unknown;
   try {
-    data = parse(fs.readFileSync(specPath, "utf8"));
+    data = parse(fs.readFileSync(path.join(specDir, name), "utf8"));
   } catch (e) {
-    return { specs: null, error: "yaml-error", detail: errLine(e) };
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      return { specs: [], error: "missing", detail: null };
+    }
+    return { specs: [], error: "io-error", detail: errLine(e) };
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    return { specs: null, error: "malformed-store", detail: null };
+    return { specs: [], error: "malformed-store", detail: null };
   }
   const specs = (data as Record<string, unknown>).specs;
-  if (!Array.isArray(specs)) return { specs: null, error: "malformed-store", detail: null };
+  if (!Array.isArray(specs)) return { specs: [], error: "malformed-store", detail: null };
   for (const s of specs) {
     if (
       typeof s !== "object" ||
@@ -288,18 +333,45 @@ function loadStore(specPath: string): Store {
       Array.isArray(s) ||
       typeof (s as Record<string, unknown>).id !== "string"
     ) {
-      return { specs: null, error: "malformed-store", detail: null };
+      return { specs: [], error: "malformed-store", detail: null };
     }
   }
   return { specs: specs as Record<string, unknown>[], error: null, detail: null };
 }
 
-function writeStore(specPath: string, specs: Record<string, unknown>[]): void {
+function loadStore(specDir: string): Store {
+  if (fs.existsSync(path.join(specDir, "SPECS.md"))) {
+    return { files: {}, error: "legacy-store", detail: null };
+  }
+  const names = listStoreFiles(specDir);
+  if (names.length === 0) return { files: {}, error: "spec-file-missing", detail: null };
+  const files: Record<string, Record<string, unknown>[]> = {};
+  for (const name of names) {
+    const f = loadFile(specDir, name);
+    if (f.error) return { files: {}, error: f.error, detail: f.detail };
+    files[name] = f.specs;
+  }
+  return { files, error: null, detail: null };
+}
+
+function specListYaml(specs: Record<string, unknown>[]): string {
+  const raw = stringify({ specs }, { lineWidth: 100 });
+  const out: string[] = [];
+  let seenItem = false;
+  for (const line of raw.split("\n")) {
+    if (seenItem && line.startsWith("  - ")) out.push("");
+    if (line.startsWith("  - ")) seenItem = true;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function writeFile(specPath: string, specs: Record<string, unknown>[]): void {
   const dir = path.dirname(specPath);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = `${specPath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    fs.writeFileSync(tmp, stringify({ specs }, { lineWidth: 100 }));
+    fs.writeFileSync(tmp, specListYaml(specs));
     fs.renameSync(tmp, specPath);
   } catch (e) {
     try {
@@ -355,7 +427,7 @@ function specProblems(spec: Record<string, unknown>, cfg: Config): string[] {
     problems.push(`${id}: status is not allowed because status is disabled in ${CONFIG_FILE}`);
   }
   if (!idRegex(cfg.layers).test(id)) {
-    problems.push(`${id}: id does not match {${cfg.layers.join("_")}}_result`);
+    problems.push(`${id}: id does not match ${idPattern(cfg.layers)}`);
   }
   return problems;
 }
@@ -419,27 +491,31 @@ function coverageProblems(specs: Record<string, unknown>[], cfg: Config): string
 function doRead(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
-    fail("invalid-id", { id, pattern: `{${cfg.layers.join("_")}}_result` });
+    fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
   }
-  const specPath = path.join(specDir, "SPECS.md");
-  const store = loadStore(specPath);
-  if (store.error) fail(store.error, withDetail({ file: SPEC_FILE, id }, store.detail));
-  for (const spec of store.specs ?? []) {
-    if (spec.id === id) {
-      console.log(`status=success action=read id=${id}`);
-      console.log("");
-      console.log(stringify(spec, { lineWidth: 100 }));
-      return 0;
+  const store = loadStore(specDir);
+  if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB, id }, store.detail));
+  for (const specs of Object.values(store.files)) {
+    for (const spec of specs) {
+      if (spec.id === id) {
+        console.log(`status=success action=read id=${id}`);
+        console.log("");
+        console.log(stringify(spec, { lineWidth: 100 }));
+        return 0;
+      }
     }
   }
-  const known = (store.specs ?? []).map((s) => String(s.id)).join(",");
+  const known = Object.values(store.files)
+    .flat()
+    .map((s) => String(s.id))
+    .join(",");
   fail("not-found", { id, known });
 }
 
 function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
-    fail("invalid-id", { id, pattern: `{${cfg.layers.join("_")}}_result` });
+    fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
   }
   const description = args.description as string;
   const motivation = args.motivation as string;
@@ -475,23 +551,27 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
     const tp = taxonomyProblem(id, cfg);
     if (tp) fail("taxonomy-unknown", { id }, [tp]);
   }
-  const specPath = path.join(specDir, "SPECS.md");
-  const store = loadStore(specPath);
-  if (store.error && store.error !== "spec-file-missing") {
-    fail(store.error, withDetail({ file: SPEC_FILE }, store.detail));
+  const file = storeFileForId(id, cfg);
+  const filePath = path.join(specDir, file);
+  if (fs.existsSync(path.join(specDir, "SPECS.md"))) {
+    fail("legacy-store", { file: "spec/SPECS.md" });
   }
-  let specs = store.specs ?? [];
+  const existing = loadFile(specDir, file);
+  if (existing.error && existing.error !== "missing") {
+    fail(existing.error, withDetail({ file }, existing.detail));
+  }
+  let specs = existing.specs;
   const action = specs.some((s) => s.id === id) ? "update" : "create";
   specs = specs.filter((s) => s.id !== id);
   specs.push(spec);
   specs.sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
   try {
-    writeStore(specPath, specs);
+    writeFile(filePath, specs);
   } catch (e) {
-    fail("io-error", { file: SPEC_FILE, error: errLine(e) });
+    fail("io-error", { file, error: errLine(e) });
   }
   console.log(
-    `status=success action=${action} id=${id} path=${SPEC_FILE} taxonomy=${
+    `status=success action=${action} id=${id} path=${file} taxonomy=${
       cfg.structure ? "checked" : "skipped"
     } has-status=${cfg.statusEnabled}`,
   );
@@ -500,11 +580,11 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
 
 function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: Config): number {
   const query = args.query as string;
-  const store = loadStore(path.join(specDir, "SPECS.md"));
+  const store = loadStore(specDir);
   if (store.error && store.error !== "spec-file-missing") {
-    fail(store.error, withDetail({ file: SPEC_FILE }, store.detail));
+    fail(store.error, withDetail({ file: "spec/" + STORE_GLOB }, store.detail));
   }
-  const specs = store.specs ?? [];
+  const specs = Object.values(store.files).flat();
   const matches = specs
     .filter((s) => specText(s).toLowerCase().includes(query.toLowerCase()))
     .map((s) => ({ id: s.id, description: s.description }));
@@ -515,9 +595,9 @@ function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: 
 }
 
 function doValidate(specDir: string, cfg: Config): number {
-  const store = loadStore(path.join(specDir, "SPECS.md"));
-  if (store.error) fail(store.error, withDetail({ file: SPEC_FILE }, store.detail));
-  const specs = store.specs ?? [];
+  const store = loadStore(specDir);
+  if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB }, store.detail));
+  const specs = Object.values(store.files).flat();
   const problems: string[] = [];
   const seen = new Set<string>();
   for (const s of specs) {
@@ -527,6 +607,16 @@ function doValidate(specDir: string, cfg: Config): number {
     problems.push(...specProblems(s, cfg));
     const tp = taxonomyProblem(id, cfg);
     if (tp) problems.push(tp);
+  }
+  for (const [name, fileSpecs] of Object.entries(store.files)) {
+    for (const s of fileSpecs) {
+      const id = String(s.id);
+      if (!idRegex(cfg.layers).test(id)) continue;
+      const expected = storeFileForId(id, cfg);
+      if (expected !== name) {
+        problems.push(`${id}: spec is in '${name}' but belongs in '${expected}'`);
+      }
+    }
   }
   problems.push(...coverageProblems(specs, cfg));
   if (problems.length) {

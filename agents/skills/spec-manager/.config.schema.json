@@ -32,14 +32,19 @@
       "type": "object",
       "properties": {
         "layers": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+            }
+          ]
         },
         "structure": { "type": "object" }
       },
-      "required": ["layers", "structure"],
+      "required": ["layers"],
       "additionalProperties": false
     }
   },
