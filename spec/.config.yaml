@@ -1,0 +1,20 @@
+status:
+  - pending
+  - done
+taxonomy:
+  layers:
+    - area
+    - component
+    - section
+  structure:
+    isolation:
+      container:
+        - access
+        - persistence
+        - setup
+      script:
+        - output
+        - setup
+    tooling:
+      spec-manager:
+        - specs

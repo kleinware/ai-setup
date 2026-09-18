@@ -7,6 +7,7 @@ specs:
     agent.
   - Password and keyboard-interactive authentication are refused (sshd_config sets PasswordAuthentication
     no, KbdInteractiveAuthentication no, PermitRootLogin no, AllowUsers agent).
+  status: done
 - id: isolation_container_access_key-ownership
   description: The host SSH public key is delivered into the container as a file owned by agent with mode
     600.
@@ -17,6 +18,7 @@ specs:
   - On container startup, start-container copies it to /etc/ssh/authorized_keys/agent owned by agent:agent
     with mode 600.
   - SSH from the host with the matching private key succeeds.
+  status: done
 - id: isolation_container_persistence_project-folder-workspace
   description: The project folder containing 'main' and 'worktrees' is bind-mounted into the container
     as /workspace.
@@ -25,6 +27,7 @@ specs:
   acceptance_criteria:
   - docker compose binds the parent of the 'main' folder to /workspace.
   - Inside the container, /workspace contains the main and worktrees folders.
+  status: done
 - id: isolation_container_persistence_survives-recreate
   description: The agent workspace, home directory, and SSH host key survive container recreation.
   motivation: Rebuilding or recreating a container must not lose work or change the SSH host key that
@@ -33,6 +36,7 @@ specs:
   - Files under /workspace and /home/agent persist across docker compose up -d --build of the same project.
   - The SSH host key in /var/lib/herdr-ssh is preserved, so the client known_hosts entry for the project
     remains valid after recreation.
+  status: done
 - id: isolation_container_setup_gitconfig-mounted
   description: The host ~/.gitconfig is bind-mounted read-only into the container as /home/agent/.gitconfig.
   motivation: The agent needs the host user's git identity and settings so that git operations inside
@@ -40,6 +44,7 @@ specs:
   acceptance_criteria:
   - The host gitconfig is mounted read-only at /home/agent/.gitconfig.
   - ai-repo.sh up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
+  status: done
 - id: isolation_container_setup_host-timezone
   description: The container uses the host's time zone, bind-mounted read-only from the host's /etc/localtime.
   motivation: Timestamps produced inside the container (logs, file mtimes, session output) should match
@@ -47,6 +52,7 @@ specs:
   acceptance_criteria:
   - docker compose bind-mounts the host's /etc/localtime read-only to /etc/localtime in the container.
   - In a running container, date reports the host's time zone rather than UTC.
+  status: done
 - id: isolation_container_setup_host-user-group
   description: The container's agent user and group use the host user's UID and GID.
   motivation: Files created by the agent inside bind-mounted directories must be owned by the host user,
@@ -55,6 +61,7 @@ specs:
   - start-container sets the agent user's UID to HOST_UID and its primary group GID to HOST_GID before
     starting sshd.
   - In a running container, id reports agent with the host user's UID and GID.
+  status: done
 - id: isolation_container_setup_web-port
   description: The container's web server port 8080 is exposed on the host as the SSH port + 1, bound
     to 127.0.0.1.
@@ -65,6 +72,7 @@ specs:
   - docker compose maps 127.0.0.1:<ssh-port+1> to container port 8080.
   - A server listening on port 8080 inside a running container is reachable at http://127.0.0.1:<ssh-port+1>
     from the host.
+  status: done
 - id: isolation_script_output_ls-running-projects
   description: The ls command lists all currently running AI project containers.
   motivation: Users need to see which agent containers are running and their status without digging through
@@ -74,6 +82,7 @@ specs:
     ai-* compose container with its project name, host SSH port, and status.
   - Compose projects whose name does not start with ai- are not listed.
   - When no AI project containers are running, the command prints 'No running AI project containers.'
+  status: done
 - id: isolation_script_output_next-steps
   description: On success, the up command prints the SSH config block for the project and the herdr machine
     add command.
@@ -83,12 +92,14 @@ specs:
   - The output includes a Host ai-<project> block with HostName 127.0.0.1, Port <ssh-port>, User agent,
     IdentityFile <key>, and IdentitiesOnly yes.
   - The output includes herdr machine add ai-<project> --label "<project>".
+  status: done
 - id: isolation_script_output_web-port
   description: On success, the up command prints the web base URL for the container's port 8080.
   motivation: Users need the exact URL to open the container's web server in a browser and verify site
     behavior.
   acceptance_criteria:
   - The output includes http://127.0.0.1:<web-port>/ where <web-port> is the SSH port + 1.
+  status: done
 - id: isolation_script_setup_derives-project
   description: ai-repo.sh up derives the project name from the working directory and creates the worktrees
     directory.
@@ -97,6 +108,7 @@ specs:
   acceptance_criteria:
   - When run from the git root named 'main', up uses the parent folder's name as the compose project name.
   - up creates <project>/worktrees next to main if it does not already exist.
+  status: done
 - id: isolation_script_setup_requires-ssh-key
   description: ai-repo.sh up exits with an error if the SSH public key file does not exist.
   motivation: The container accepts only that public key, so starting a container without the key would
@@ -105,6 +117,7 @@ specs:
   - With no ~/.ssh/herdr-container.pub and no SSH_PUBLIC_KEY override, running up from the project's 'main'
     git root exits non-zero and prints 'SSH public key not found'.
   - SSH_PUBLIC_KEY=/path/to/key.pub overrides the default key path.
+  status: done
 - id: isolation_script_setup_validates-args
   description: ai-repo.sh up validates its argument and working directory before running docker compose.
   motivation: The compose project name is derived from the folder layout and must be a safe identifier,
@@ -118,6 +131,7 @@ specs:
   - A port outside 1024-65534 exits non-zero with 'SSH port must be between 1024 and 65534'. The web port
     is the SSH port + 1, so it must fit within 65535.
   - An unknown command prints usage and exits non-zero.
+  status: done
 - id: tooling_spec-manager_specs_agent-output-yaml
   description: Structured output the skill returns to the agent is YAML.
   motivation: YAML is more token-efficient than JSON for agent-consumed output, matching the YAML-on-disk
@@ -125,16 +139,39 @@ specs:
   acceptance_criteria:
   - find --query returns matching specs as a YAML list of id and description mappings.
   - read --id returns the spec as YAML.
+  status: done
+- id: tooling_spec-manager_specs_agents-md-pointer
+  description: AGENTS.md carries a single line pointing to spec/.config.yaml for spec structure and taxonomy.
+  motivation: Keeps agent instructions minimal while the full taxonomy stays machine-checkable in the config
+    file.
+  acceptance_criteria:
+  - AGENTS.md contains no '## Spec taxonomy' section.
+  - AGENTS.md contains a line directing agents to spec/.config.yaml for spec structure details.
+  status: done
+- id: tooling_spec-manager_specs_config-file
+  description: spec/.config.yaml configures the status states in use and the spec taxonomy for the
+    spec-manager skill.
+  motivation: Repo preferences live next to the specs so any agent can discover the contract; the schema is
+    owned by the skill.
+  acceptance_criteria:
+  - Every action validates the config against the skill's .config.schema.json and fails with config-invalid
+    on violations.
+  - status is false, a list of state strings, or a list of {state, description?} objects; states match
+    ^[a-z0-9_]+$ and are unique.
+  - taxonomy declares layers and a structure nested as deep as layers; a missing config or key defaults to
+    no status and the area/component/section layers.
+  status: done
 - id: tooling_spec-manager_specs_create-update
-  description: The spec-manager skill can create, update, read, and search canonical spec entries stored
-    as YAML in spec/SPECS.md.
+  description: The spec-manager skill can create, update, read, search, and validate canonical spec entries
+    stored as YAML in spec/SPECS.md.
   motivation: Keep intended behavior a durable, version-controlled artifact that agents can discover and
     manage without external trackers.
   acceptance_criteria:
   - read --id returns the full spec for a known id and fails with not-found otherwise.
-  - write --id with all fields as CLI arguments validates the four-field schema and the AGENTS.md taxonomy
-    before creating or updating spec/SPECS.md and keeps the file sorted by id.
+  - write --id with all fields as CLI arguments validates the config, the spec schema, and the taxonomy
+    from spec/.config.yaml before creating or updating spec/SPECS.md and keeps the file sorted by id.
   - find --query prints matching specs as a YAML list of id and description.
+  status: done
 - id: tooling_spec-manager_specs_sorted-by-id
   description: Entries in spec/SPECS.md are stored sorted alphabetically by id.
   motivation: Makes it easier for a human to find a spec's id and keeps specs in the same area/component/section
@@ -142,3 +179,23 @@ specs:
   acceptance_criteria:
   - After every write, the specs list in spec/SPECS.md is ordered alphabetically by id.
   - Specs sharing the same area, component, and section appear contiguously.
+  status: done
+- id: tooling_spec-manager_specs_status-field
+  description: When status is enabled in spec/.config.yaml, every spec carries a status field set to one of
+    the configured states.
+  motivation: Integrating lightweight work state with git lets agents see inside the repo which specs are
+    pending and which are done.
+  acceptance_criteria:
+  - write --id requires --status and rejects values outside the configured states when status is enabled.
+  - When status is disabled, specs must not contain a status key.
+  status: done
+- id: tooling_spec-manager_specs_validate-action
+  description: validate checks that all spec IDs are unique, every spec matches the schema, status values are
+    configured states, IDs match the declared taxonomy, and every declared taxonomy term has at least one
+    spec.
+  motivation: A single gate keeps the spec store and the config consistent before the repo is relied on.
+  acceptance_criteria:
+  - spec.sh validate exits 0 with status=success when the store and config are consistent.
+  - Duplicate IDs, schema violations, unknown status values, unknown taxonomy terms, or declared terms
+    with no specs fail validation with a problems list.
+  status: done
