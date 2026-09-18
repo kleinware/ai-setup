@@ -114,7 +114,7 @@ benchmark_variant() {
                     -p "$prompt" \
                     -n "$TOKENS" \
                     -st \
-                    -v \
+                    -lv 4 \
                     -m "$model" \
                     "${vision_args[@]}" </dev/null 2>&1
             )
