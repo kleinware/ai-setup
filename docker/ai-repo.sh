@@ -63,7 +63,17 @@ case "$COMMAND" in
         mkdir -p "${PROJECT_DIR}/worktrees"
 
         # Resolve paths relative to the script, not the current directory.
-        SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+        # Follow symlinks so this works when the script is invoked through
+        # a symlink (e.g. ~/bin/ai-repo -> docker/ai-repo.sh).
+        SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+        while [[ -L "$SCRIPT_SOURCE" ]]; do
+            SCRIPT_LINK_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd -P)"
+            SCRIPT_SOURCE="$(readlink -- "$SCRIPT_SOURCE")"
+            if [[ "$SCRIPT_SOURCE" != /* ]]; then
+                SCRIPT_SOURCE="$SCRIPT_LINK_DIR/$SCRIPT_SOURCE"
+            fi
+        done
+        SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd -P)"
 
         export SSH_PORT
         export WEB_PORT
