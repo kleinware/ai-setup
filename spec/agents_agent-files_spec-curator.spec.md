@@ -15,12 +15,12 @@ specs:
       implemented are actually implemented and looking for meaningful implemented behavior that has no spec,
       then presents all observed discrepancies with a recommended way to deal with each, via a single question
       tool call.
-    motivation: The store must stay honest: recorded as implemented means actually implemented, and meaningful
-      behavior must not be missing from the store.
+    motivation: "The store must stay honest: recorded as implemented means actually implemented, and meaningful
+      behavior must not be missing from the store."
     acceptance_criteria:
       - A discrepancy noticed outside audit mode is surfaced to the user with an offer of a full audit.
-      - Audit output lists every observed discrepancy, each paired with a recommended action: update the spec,
-        add a missing spec, change the status, or dismiss it, presented through one question tool call.
+      - "Audit output lists every observed discrepancy, each paired with a recommended action: update the spec,
+        add a missing spec, change the status, or dismiss it, presented through one question tool call."
     status: done
 
   - id: agents_agent-files_spec-curator_decision-doors
@@ -65,8 +65,8 @@ specs:
     motivation: Functional specs can be checked by a program, infrastructure specs steer implementation without
       bloating the store, and under-specification leaves room for easy-to-change choices.
     acceptance_criteria:
-      - Every functional spec carries acceptance criteria that are observable conditions: a command, an assertion
-        on output, or a file in a given state.
+      - "Every functional spec carries acceptance criteria that are observable conditions: a command, an assertion
+        on output, or a file in a given state."
       - Infrastructure specs state the choice and why it matters, and do not claim direct verification of the
         choice.
       - The curator adds no spec detail beyond what is needed to build and verify the behavior.
