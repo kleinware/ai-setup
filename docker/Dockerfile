@@ -88,10 +88,13 @@ RUN su - agent -c \
        /usr/local/bin/herdr
 
 # Playwright (headless Chromium for agent-driven browser tests)
+# Browsers live outside /home/agent so the agent-home named volume
+# cannot shadow them from the image.
 RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
-    && PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright \
-       playwright install --with-deps chromium \
-    && chown -R agent:agent /home/agent/.cache
+    && mkdir -p /opt/ms-playwright \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+        playwright install --with-deps chromium \
+    && chown -R agent:agent /opt/ms-playwright
 
 # Configure SSH for key-only access
 RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
@@ -138,7 +141,7 @@ RUN printf '%s\n' \
 ENV HOME=/home/agent
 ENV PATH="/home/agent/.local/bin:${PATH}"
 ENV NODE_PATH=/usr/lib/node_modules
-ENV PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
 WORKDIR /workspace
 
