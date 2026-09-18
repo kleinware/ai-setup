@@ -2,6 +2,7 @@ FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENCODE_VERSION=1.18.31
+ARG LAZYGIT_VERSION=0.65.1
 
 # Base development dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,6 +26,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 # OpenCode
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+
+# Lazygit
+RUN LAZYGIT_ARCH="$(uname -m | sed -e 's/aarch64/arm64/')" \
+    && curl -fsLo lazygit.tar.gz \
+       "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_${LAZYGIT_ARCH}.tar.gz" \
+    && tar xf lazygit.tar.gz lazygit \
+    && install -m 755 lazygit /usr/local/bin/lazygit \
+    && rm lazygit lazygit.tar.gz
 
 # Dedicated development user (UID/GID are matched to the host at startup)
 # The config dirs must exist in the image so docker does not create
