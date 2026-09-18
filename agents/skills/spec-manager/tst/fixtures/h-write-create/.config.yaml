@@ -1,0 +1,6 @@
+status: [pending, done]
+taxonomy:
+  layers: [area, component, section]
+  structure:
+    a:
+      b: [c, d]
