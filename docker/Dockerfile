@@ -3,20 +3,48 @@ FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENCODE_VERSION=1.18.31
 ARG LAZYGIT_VERSION=0.65.1
+ARG BUN_VERSION=1.4.2
+ARG PLAYWRIGHT_VERSION=1.63.0
 
 # Base development dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
+    build-essential \
     ca-certificates \
     curl \
+    dnsutils \
+    fd-find \
+    file \
     git \
+    htop \
+    iproute2 \
+    iputils-ping \
+    jq \
+    less \
+    lsof \
+    nano \
+    netcat-openbsd \
     openssh-client \
     openssh-server \
     python3 \
+    python3-dev \
     python3-pip \
-    build-essential \
+    python3-venv \
+    ripgrep \
+    rsync \
+    shellcheck \
+    sqlite3 \
+    strace \
     sudo \
     tini \
+    tmux \
+    tree \
+    unzip \
+    vim \
+    wget \
+    zip \
+    zstd \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 22
@@ -35,6 +63,14 @@ RUN LAZYGIT_ARCH="$(uname -m | sed -e 's/aarch64/arm64/')" \
     && install -m 755 lazygit /usr/local/bin/lazygit \
     && rm lazygit lazygit.tar.gz
 
+# Bun
+RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
+    && curl -fsLo bun.zip \
+       "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" \
+    && unzip -o bun.zip \
+    && install -m 755 "bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun \
+    && rm -rf bun.zip "bun-linux-${BUN_ARCH}"
+
 # Dedicated development user (UID/GID are matched to the host at startup)
 # The config dirs must exist in the image so docker does not create
 # the mount targets as root.
@@ -50,6 +86,12 @@ RUN su - agent -c \
     && install -m 755 \
        /home/agent/.local/bin/herdr \
        /usr/local/bin/herdr
+
+# Playwright (headless Chromium for agent-driven browser tests)
+RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
+    && PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright \
+       playwright install --with-deps chromium \
+    && chown -R agent:agent /home/agent/.cache
 
 # Configure SSH for key-only access
 RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
@@ -96,10 +138,12 @@ RUN printf '%s\n' \
 
 ENV HOME=/home/agent
 ENV PATH="/home/agent/.local/bin:${PATH}"
+ENV NODE_PATH=/usr/lib/node_modules
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright
 
 WORKDIR /workspace
 
-EXPOSE 2222
+EXPOSE 2222 8080
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start-container"]

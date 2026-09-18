@@ -48,6 +48,16 @@ specs:
   - start-container sets the agent user's UID to HOST_UID and its primary group GID to HOST_GID before
     starting sshd.
   - In a running container, id reports agent with the host user's UID and GID.
+- id: isolation_container_setup_web-port
+  description: The container's web server port 8080 is exposed on the host as the SSH port + 1, bound
+    to 127.0.0.1.
+  motivation: Agents spin up web servers inside the container and drive a browser to test them, so port
+    8080 must be reachable from the host. Publishing it one above the SSH port keeps the pair easy to
+    remember.
+  acceptance_criteria:
+  - docker compose maps 127.0.0.1:<ssh-port+1> to container port 8080.
+  - A server listening on port 8080 inside a running container is reachable at http://127.0.0.1:<ssh-port+1>
+    from the host.
 - id: isolation_script_output_ls-running-projects
   description: The ls command lists all currently running AI project containers.
   motivation: Users need to see which agent containers are running and their status without digging through
@@ -66,6 +76,12 @@ specs:
   - The output includes a Host ai-<project> block with HostName 127.0.0.1, Port <ssh-port>, User agent,
     IdentityFile <key>, and IdentitiesOnly yes.
   - The output includes herdr machine add ai-<project> --label "<project>".
+- id: isolation_script_output_web-port
+  description: On success, the up command prints the web base URL for the container's port 8080.
+  motivation: Users need the exact URL to open the container's web server in a browser and verify site
+    behavior.
+  acceptance_criteria:
+  - The output includes http://127.0.0.1:<web-port>/ where <web-port> is the SSH port + 1.
 - id: isolation_script_setup_derives-project
   description: ai-repo.sh up derives the project name from the working directory and creates the worktrees
     directory.
@@ -92,7 +108,8 @@ specs:
   - A working directory not named 'main' exits non-zero with 'Must be run from a folder named 'main'.
   - A working directory that is not the git root of a worktree exits non-zero.
   - A derived project name not matching ^[a-z0-9][a-z0-9_-]*$ exits non-zero with 'Invalid project name'.
-  - A port outside 1024-65535 exits non-zero with 'SSH port must be between 1024 and 65535'.
+  - A port outside 1024-65534 exits non-zero with 'SSH port must be between 1024 and 65534'. The web port
+    is the SSH port + 1, so it must fit within 65535.
   - An unknown command prints usage and exits non-zero.
 - id: tooling_spec-manager_specs_agent-output-yaml
   description: Structured output the skill returns to the agent is YAML.

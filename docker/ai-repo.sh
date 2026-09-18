@@ -49,12 +49,15 @@ case "$COMMAND" in
             exit 1
         fi
 
-        # Validate the host SSH port.
+        # Validate the host SSH port; the web port is SSH port + 1,
+        # so the SSH port must leave room for it.
         if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] ||
-           (( 10#$SSH_PORT < 1024 || 10#$SSH_PORT > 65535 )); then
-            echo "SSH port must be between 1024 and 65535" >&2
+           (( 10#$SSH_PORT < 1024 || 10#$SSH_PORT > 65534 )); then
+            echo "SSH port must be between 1024 and 65534" >&2
             exit 1
         fi
+
+        WEB_PORT=$((SSH_PORT + 1))
 
         # Create the worktrees directory next to 'main' if it doesn't exist.
         mkdir -p "${PROJECT_DIR}/worktrees"
@@ -63,6 +66,7 @@ case "$COMMAND" in
         SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
         export SSH_PORT
+        export WEB_PORT
         export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
         export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
         export PROJECT_DIR
@@ -100,6 +104,9 @@ Host ${SSH_HOST}
     IdentitiesOnly yes
 EOF
 
+        echo
+        echo "Web servers inside the container (port 8080) are reachable at:"
+        echo "  http://127.0.0.1:${WEB_PORT}/"
         echo
         echo "Add the container to herdr (nested herdr sessions are not allowed):"
         echo "  herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
