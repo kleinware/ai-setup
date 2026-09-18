@@ -127,7 +127,7 @@ RUN printf '%s\n' \
     '    groupmod -g "$HOST_GID" agent' \
     'fi' \
     'chown agent:agent /home/agent' \
-    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/opencode/agents /home/agent/.config/herdr' \
+    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
     'if [ ! -f "$KEY" ]; then' \
     '    ssh-keygen -q -t ed25519 -N "" -f "$KEY"' \
