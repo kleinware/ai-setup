@@ -97,7 +97,6 @@ RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
 RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
     /etc/ssh/authorized_keys \
     && printf '%s\n' \
-       'Port 2222' \
        'HostKey /var/lib/herdr-ssh/ssh_host_ed25519_key' \
        'PasswordAuthentication no' \
        'KbdInteractiveAuthentication no' \
@@ -143,7 +142,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright
 
 WORKDIR /workspace
 
-EXPOSE 2222 8080
+EXPOSE 22 8080
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start-container"]

@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "127.0.0.1:${SSH_PORT:?SSH_PORT is required}:2222"
+      - "127.0.0.1:${SSH_PORT:?SSH_PORT is required}:22"
       - "127.0.0.1:${WEB_PORT:?WEB_PORT is required}:8080"
 
     volumes:

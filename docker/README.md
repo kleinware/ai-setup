@@ -27,7 +27,7 @@ Host ai-project-b
 # Web
 
 Port 8080 inside the container is published on the host as the SSH port + 1
-(e.g. SSH port 2222 -> http://127.0.0.1:2223/), so agent-started web servers
+(e.g. SSH port 2201 -> http://127.0.0.1:2202/), so agent-started web servers
 can be driven with a browser from the host.
 
 # Herdr
