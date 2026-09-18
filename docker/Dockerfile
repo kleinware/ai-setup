@@ -77,7 +77,7 @@ RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
 RUN userdel -r ubuntu \
     && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace /home/agent/.config/opencode /home/agent/.config/herdr \
+    && mkdir -p /workspace /home/agent/.config/opencode/agents /home/agent/.config/herdr \
     && chown -R agent:agent /home/agent/.config
 
 # Install Herdr using its official installer
@@ -124,7 +124,7 @@ RUN printf '%s\n' \
     '    groupmod -g "$HOST_GID" agent' \
     'fi' \
     'chown agent:agent /home/agent' \
-    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
+    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/opencode/agents /home/agent/.config/herdr' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
     'if [ ! -f "$KEY" ]; then' \
     '    ssh-keygen -q -t ed25519 -N "" -f "$KEY"' \

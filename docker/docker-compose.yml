@@ -36,13 +36,18 @@ services:
         read_only: true
 
       - type: bind
-        source: ./opencode.json
+        source: ./container_opencode.json
         target: /home/agent/.config/opencode/opencode.json
         read_only: true
 
       - type: bind
         source: ../agents/skills
         target: /home/agent/.config/opencode/skills
+        read_only: true
+
+      - type: bind
+        source: ../agents/agent-files
+        target: /home/agent/.config/opencode/agents
         read_only: true
 
       - type: bind
