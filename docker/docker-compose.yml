@@ -21,6 +21,11 @@ services:
       - ssh-host-keys:/var/lib/herdr-ssh
 
       - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+
+      - type: bind
         source: ${SSH_PUBLIC_KEY:?SSH_PUBLIC_KEY is required}
         target: /etc/ssh/authorized_keys.src
         read_only: true

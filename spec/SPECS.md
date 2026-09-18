@@ -40,6 +40,13 @@ specs:
   acceptance_criteria:
   - The host gitconfig is mounted read-only at /home/agent/.gitconfig.
   - ai-repo.sh up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
+- id: isolation_container_setup_host-timezone
+  description: The container uses the host's time zone, bind-mounted read-only from the host's /etc/localtime.
+  motivation: Timestamps produced inside the container (logs, file mtimes, session output) should match
+    the host system, so agent output is consistent with what the user sees on the host.
+  acceptance_criteria:
+  - docker compose bind-mounts the host's /etc/localtime read-only to /etc/localtime in the container.
+  - In a running container, date reports the host's time zone rather than UTC.
 - id: isolation_container_setup_host-user-group
   description: The container's agent user and group use the host user's UID and GID.
   motivation: Files created by the agent inside bind-mounted directories must be owned by the host user,
