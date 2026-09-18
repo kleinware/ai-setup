@@ -1,7 +1,41 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "worktree": {
-    "directory": "../worktrees"
+  "subagent_depth": 2,
+  "agent": {
+    "build": {
+      "permission": { 
+        "doom_loop": "deny",
+        "external_directory":"allow",
+        "read":"allow",
+        "question": "deny",
+        "todowrite": "deny",
+        }
+     },
+     "plan": {
+      "permission": {
+        "doom_loop": "deny",
+        "read":"allow",
+        "external_directory":"allow",
+        "edit":"allow"
+      }
+     },
+
+     "general": {
+      "permission": {
+        "doom_loop": "deny",
+        "external_directory":"allow",
+        "read":"allow",
+        "task":"allow"
+      }
+     },
+     "explore": {
+      "permission": {
+        "doom_loop": "deny",
+        "external_directory":"allow",
+        "read":"allow",
+
+      }
+     }
   },
   "provider": {
     "host-llama-server": {
