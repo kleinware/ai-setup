@@ -1,0 +1,107 @@
+specs:
+  - id: tooling_spec-manager_specs_agent-output-yaml
+    description: Structured output the skill returns to the agent is YAML.
+    motivation: YAML is more token-efficient than JSON for agent-consumed output, matching the
+      YAML-on-disk spec format.
+    acceptance_criteria:
+      - find --query returns matching specs as a YAML list of id and description mappings.
+      - read --id returns the spec as YAML.
+    status: done
+
+  - id: tooling_spec-manager_specs_agents-md-pointer
+    description: AGENTS.md carries a single line pointing to spec/.config.yaml for spec structure and taxonomy.
+    motivation: Keeps agent instructions minimal while the full taxonomy stays machine-checkable in the
+      config file.
+    acceptance_criteria:
+      - AGENTS.md contains no '## Spec taxonomy' section.
+      - AGENTS.md contains a line directing agents to spec/.config.yaml for spec structure details.
+    status: done
+
+  - id: tooling_spec-manager_specs_config-file
+    description: spec/.config.yaml configures the status states in use and the spec taxonomy for the
+      spec-manager skill.
+    motivation: Repo preferences live next to the specs so any agent can discover the contract; the
+      schema is owned by the skill.
+    acceptance_criteria:
+      - Every action validates the config against the skill's .config.schema.json and fails with
+        config-invalid on violations.
+      - status is false, a list of state strings, or a list of {state, description?} objects; states
+        match ^[a-z0-9_]+$ and are unique.
+      - taxonomy declares layers and a structure nested as deep as layers, or layers false to use no
+        hierarchy, in which case structure is omitted and IDs are flat result terms.
+      - A missing config or key defaults to no status and the area/component/section layers.
+    status: done
+
+  - id: tooling_spec-manager_specs_create-update
+    description: The spec-manager skill can create, update, read, search, and validate canonical spec
+      entries stored as YAML in per-leaf files under spec/.
+    motivation: Keep intended behavior a durable, version-controlled artifact that agents can discover
+      and manage without external trackers.
+    acceptance_criteria:
+      - read --id returns the full spec for a known id and fails with not-found otherwise.
+      - write --id with all fields as CLI arguments validates the config, the spec schema, and the
+        taxonomy from spec/.config.yaml before creating or updating the leaf's .spec.md file,
+        keeping that file sorted by id.
+      - find --query prints matching specs as a YAML list of id and description across all leaf
+        files.
+    status: done
+
+  - id: tooling_spec-manager_specs_leaf-refactor
+    description: When a leaf group is getting too big, the skill suggests new taxonomy options via the
+      question tool and then performs the full refactor across the config and the leaf files.
+    motivation: Keeps each leaf file small enough to read and reason about, and grows the taxonomy
+      deliberately with the user's input instead of by accident.
+    acceptance_criteria:
+      - When a leaf file holds more than about 10 specs, the agent offers new taxonomy options with
+        the question tool before considering the work done.
+      - After the user picks an option, the agent updates the taxonomy in spec/.config.yaml,
+        rewrites each moved spec under its new id, removes emptied leaf files, and confirms with
+        validate.
+    status: done
+
+  - id: tooling_spec-manager_specs_partitioned-files
+    description: Specs are partitioned into one YAML file per taxonomy leaf under spec/, named <layer
+      terms>.spec.md (for example interface_tui_results.spec.md); when layers is false, all specs
+      live in a single specs.spec.md.
+    motivation: One file per leaf keeps each group small and lets agents open just the file relevant to
+      the spec they are working on.
+    acceptance_criteria:
+      - With layers declared, a spec with id <layer1>_<layer2>_..._<layerN>_<result> lives in
+        <layer1>_<layer2>_..._<layerN>.spec.md.
+      - With taxonomy.layers set to false, all specs live in spec/specs.spec.md and IDs are flat
+        result terms.
+      - A legacy spec/SPECS.md file is rejected with legacy-store.
+    status: done
+
+  - id: tooling_spec-manager_specs_sorted-by-id
+    description: Specs within each leaf file are stored sorted alphabetically by id.
+    motivation: Makes it easier for a human to find a spec's id and keeps the specs of one leaf grouped
+      together in a single file.
+    acceptance_criteria:
+      - After every write, the specs list in that leaf's .spec.md file is ordered alphabetically by
+        id.
+      - Specs sharing the same area, component, and section live in the same file.
+    status: done
+
+  - id: tooling_spec-manager_specs_status-field
+    description: When status is enabled in spec/.config.yaml, every spec carries a status field set to
+      one of the configured states.
+    motivation: Integrating lightweight work state with git lets agents see inside the repo which specs
+      are pending and which are done.
+    acceptance_criteria:
+      - write --id requires --status and rejects values outside the configured states when status is
+        enabled.
+      - When status is disabled, specs must not contain a status key.
+    status: done
+
+  - id: tooling_spec-manager_specs_validate-action
+    description: validate checks that all spec IDs are unique, every spec matches the schema, status
+      values are configured states, IDs match the declared taxonomy, every spec lives in the file
+      named after its leaf, and every declared taxonomy term has at least one spec.
+    motivation: A single gate keeps the partitioned spec store and the config consistent before the repo
+      is relied on.
+    acceptance_criteria:
+      - spec.sh validate exits 0 with status=success when the store and config are consistent.
+      - Duplicate IDs, schema violations, unknown status values, unknown taxonomy terms, specs in
+        the wrong leaf file, or declared terms with no specs fail validation with a problems list.
+    status: done

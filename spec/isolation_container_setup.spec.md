@@ -1,0 +1,41 @@
+specs:
+  - id: isolation_container_setup_gitconfig-mounted
+    description: The host ~/.gitconfig is bind-mounted read-only into the container as /home/agent/.gitconfig.
+    motivation: The agent needs the host user's git identity and settings so that git operations inside
+      the container behave the same as on the host.
+    acceptance_criteria:
+      - The host gitconfig is mounted read-only at /home/agent/.gitconfig.
+      - ai-repo.sh up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
+    status: done
+
+  - id: isolation_container_setup_host-timezone
+    description: The container uses the host's time zone, bind-mounted read-only from the host's /etc/localtime.
+    motivation: Timestamps produced inside the container (logs, file mtimes, session output) should
+      match the host system, so agent output is consistent with what the user sees on the host.
+    acceptance_criteria:
+      - docker compose bind-mounts the host's /etc/localtime read-only to /etc/localtime in the
+        container.
+      - In a running container, date reports the host's time zone rather than UTC.
+    status: done
+
+  - id: isolation_container_setup_host-user-group
+    description: The container's agent user and group use the host user's UID and GID.
+    motivation: Files created by the agent inside bind-mounted directories must be owned by the host
+      user, so project files stay usable on the host without permission fixes.
+    acceptance_criteria:
+      - start-container sets the agent user's UID to HOST_UID and its primary group GID to HOST_GID
+        before starting sshd.
+      - In a running container, id reports agent with the host user's UID and GID.
+    status: done
+
+  - id: isolation_container_setup_web-port
+    description: The container's web server port 8080 is exposed on the host as the SSH port + 1, bound
+      to 127.0.0.1.
+    motivation: Agents spin up web servers inside the container and drive a browser to test them, so
+      port 8080 must be reachable from the host. Publishing it one above the SSH port keeps the pair
+      easy to remember.
+    acceptance_criteria:
+      - docker compose maps 127.0.0.1:<ssh-port+1> to container port 8080.
+      - A server listening on 8080 inside a running container is reachable at
+        http://127.0.0.1:<web-port> from the host.
+    status: done
