@@ -6,6 +6,7 @@ Agent skills and repo tooling.
 
 - `agents/skills/` — skills, consumed via `~/.agents` (symlinked to `agents/`)
   - one skill per folder: `agents/skills/<name>/SKILL.md` plus bundled scripts
+- `agents/agent-files/` — agent definition markdown files (frontmatter + prompt)
 - `.githooks/` — version-controlled git hook sources
 - `setup.sh` — installs hooks from `.githooks/` into `.git/hooks/` (run after cloning)
 - `devtools/` — developer workflow scripts (e.g. `new-worktree.sh`: split a herdr pane vertically with opencode on the left, lazygit on the right)

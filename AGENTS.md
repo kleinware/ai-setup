@@ -17,6 +17,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
 ## Layout
 
 - `agents/skills/<name>/` — one skill per folder: `SKILL.md` (frontmatter + usage) plus bundled scripts. Current skills: `git-worktree-skill` (rebase a worktree branch onto a target branch), `spec-manager` (manage the per-leaf specs in `spec/`).
+- `agents/agent-files/` — agent definition markdown files (frontmatter + prompt): `spec-orchestrator.md` (mode `primary`), `implementation-orchestrator.md` (mode `all`).
 - `~/.agents` is a symlink to `agents/` — edit skills in this repo.
 - `spec/` — canonical specs, one YAML file per taxonomy leaf (`<leaf>.spec.md`; `specs.spec.md` when `taxonomy.layers` is `false`), managed via the `spec-manager` skill.
 - `spec/.config.yaml` — spec-manager config (status and taxonomy); for spec structure details, see it.
