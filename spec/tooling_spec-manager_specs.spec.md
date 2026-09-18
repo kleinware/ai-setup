@@ -17,6 +17,18 @@ specs:
       - AGENTS.md contains a line directing agents to spec/.config.yaml for spec structure details.
     status: done
 
+  - id: tooling_spec-manager_specs_config-actions
+    description: The spec-manager skill manages spec/.config.yaml (status and taxonomy) through config
+      actions in its CLI; agents never edit the file directly.
+    motivation: Every config change is schema-validated and written atomically by the same tool that
+      manages the specs, so the config cannot drift out of contract.
+    acceptance_criteria:
+      - config get prints the config and config set, config add, and config remove update it,
+        validating the result before writing
+      - SKILL.md instructs agents to use the config actions rather than editing spec/.config.yaml by
+        hand
+    status: done
+
   - id: tooling_spec-manager_specs_config-file
     description: spec/.config.yaml configures the status states in use and the spec taxonomy for the
       spec-manager skill.

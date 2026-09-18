@@ -27,7 +27,7 @@ type Case = {
   args: string[];
   expectCode: number;
   expectContains: string[];
-  expectFile?: { name: string; contains: string[] };
+  expectFile?: { name: string; contains: string[]; notContains?: string[] };
 };
 
 const cases: Case[] = [
@@ -217,14 +217,203 @@ const cases: Case[] = [
     expectCode: 1,
     expectContains: ["reason=malformed-store"],
   },
-  {
-    name: "find with no matches succeeds with count=0",
-    fix: "s-find-none",
-    args: ["find", "--query", "zzz"],
-    expectCode: 0,
-    expectContains: ["count=0"],
-  },
-];
+   {
+     name: "find with no matches succeeds with count=0",
+     fix: "s-find-none",
+     args: ["find", "--query", "zzz"],
+     expectCode: 0,
+     expectContains: ["count=0"],
+   },
+   {
+     name: "config get prints the config file",
+     fix: "h-config",
+     args: ["config", "get"],
+     expectCode: 0,
+     expectContains: ["action=config-get", "path=spec/.config.yaml", "pending", "done", "structure:"],
+   },
+   {
+     name: "config get reports a missing config",
+     fix: "h-noconfig",
+     args: ["config", "get"],
+     expectCode: 0,
+     expectContains: ["action=config-get", "file=missing"],
+   },
+   {
+     name: "config get fails on a broken config",
+     fix: "s-config-uppercase",
+     args: ["config", "get"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config set creates a config from scratch",
+     fix: null,
+     args: ["config", "set", "--status", "pending", "done", "--layers", "a", "b", "c", "--structure", "a: {b: [c, d]}"],
+     expectCode: 0,
+     expectContains: ["action=config-set", "path=spec/.config.yaml"],
+     expectFile: {
+       name: ".config.yaml",
+       contains: ["status:", "pending", "done", "layers:", "structure:", "- c", "- d"],
+     },
+   },
+   {
+     name: "config set updates only the status and keeps the taxonomy",
+     fix: "h-config",
+     args: ["config", "set", "--status", "wip:in progress", "done:finished"],
+     expectCode: 0,
+     expectContains: ["action=config-set"],
+     expectFile: {
+       name: ".config.yaml",
+       contains: ["state: wip", "description: in progress", "state: done", "structure:"],
+     },
+   },
+   {
+     name: "config set disables status",
+     fix: "h-config",
+     args: ["config", "set", "--status", "false"],
+     expectCode: 0,
+     expectContains: ["action=config-set"],
+     expectFile: { name: ".config.yaml", contains: ["status: false", "structure:"] },
+   },
+   {
+     name: "config set disables layers and drops the structure",
+     fix: "h-config",
+     args: ["config", "set", "--layers", "false"],
+     expectCode: 0,
+     expectContains: ["action=config-set"],
+     expectFile: {
+       name: ".config.yaml",
+       contains: ["layers: false", "status:"],
+       notContains: ["structure"],
+     },
+   },
+   {
+     name: "config set rejects layers false together with a structure",
+     fix: "h-config",
+     args: ["config", "set", "--layers", "false", "--structure", "a: [b]"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid", "must be omitted"],
+   },
+   {
+     name: "config set rejects a structure whose depth does not match the layers",
+     fix: "h-config",
+     args: ["config", "set", "--layers", "a", "b", "--structure", "a: {b: [c]}"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config set rejects an invalid state name",
+     fix: "h-config",
+     args: ["config", "set", "--status", "Pending"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config set rejects a non-mapping structure",
+     fix: "h-config",
+     args: ["config", "set", "--structure", "a"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid", "must be a YAML mapping"],
+   },
+   {
+     name: "config set fails without any flag",
+     fix: "h-config",
+     args: ["config", "set"],
+     expectCode: 2,
+     expectContains: [],
+   },
+   {
+     name: "config set can fix a broken config",
+     fix: "s-config-depth",
+     args: ["config", "set", "--structure", "a: {b: [c]}"],
+     expectCode: 0,
+     expectContains: ["action=config-set"],
+     expectFile: { name: ".config.yaml", contains: ["structure:", "- c"] },
+   },
+   {
+     name: "config set still fails when the result stays invalid",
+     fix: "s-config-depth",
+     args: ["config", "set", "--status", "wip:in progress"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config add appends a term to a leaf list",
+     fix: "h-config",
+     args: ["config", "add", "--term", "e", "--parent", "a/b"],
+     expectCode: 0,
+     expectContains: ["action=config-add", "term=e"],
+     expectFile: { name: ".config.yaml", contains: ["- e"] },
+   },
+   {
+     name: "config add rejects an existing term",
+     fix: "h-config",
+     args: ["config", "add", "--term", "c", "--parent", "a/b"],
+     expectCode: 1,
+     expectContains: ["reason=term-exists"],
+   },
+   {
+     name: "config add rejects an unknown parent",
+     fix: "h-config",
+     args: ["config", "add", "--term", "e", "--parent", "a/z"],
+     expectCode: 1,
+     expectContains: ["reason=term-not-found"],
+   },
+   {
+     name: "config add rejects a parent that is not a leaf level",
+     fix: "h-config",
+     args: ["config", "add", "--term", "e", "--parent", "a"],
+     expectCode: 1,
+     expectContains: ["reason=term-not-found"],
+   },
+   {
+     name: "config add fails when the config is missing",
+     fix: "h-noconfig",
+     args: ["config", "add", "--term", "e", "--parent", "a/b"],
+     expectCode: 1,
+     expectContains: ["reason=config-missing"],
+   },
+   {
+     name: "config add fails when layers is false",
+     fix: "h-layers-false",
+     args: ["config", "add", "--term", "x"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config remove drops a term from a leaf list",
+     fix: "h-config",
+     args: ["config", "remove", "--term", "d", "--parent", "a/b"],
+     expectCode: 0,
+     expectContains: ["action=config-remove", "term=d"],
+     expectFile: {
+       name: ".config.yaml",
+       contains: ["- c\n"],
+       notContains: ["- d\n"],
+     },
+   },
+   {
+     name: "config remove rejects a missing term",
+     fix: "h-config",
+     args: ["config", "remove", "--term", "zz", "--parent", "a/b"],
+     expectCode: 1,
+     expectContains: ["reason=term-not-found"],
+   },
+   {
+     name: "config remove fails when it would empty the structure",
+     fix: "h-config-min",
+     args: ["config", "remove", "--term", "b", "--parent", "a"],
+     expectCode: 1,
+     expectContains: ["reason=config-invalid"],
+   },
+   {
+     name: "config remove fails when the config is missing",
+     fix: "h-noconfig",
+     args: ["config", "remove", "--term", "b", "--parent", "a"],
+     expectCode: 1,
+     expectContains: ["reason=config-missing"],
+   },
+ ];
 
 describe("spec-manager CLI", () => {
   for (const c of cases) {
@@ -239,6 +428,9 @@ describe("spec-manager CLI", () => {
           const content = readFileSync(join(dir, c.expectFile.name), "utf8");
           for (const s of c.expectFile.contains) {
             expect(content).toContain(s);
+          }
+          for (const s of c.expectFile.notContains ?? []) {
+            expect(content).not.toContain(s);
           }
         }
       } finally {

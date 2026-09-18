@@ -1,6 +1,6 @@
 ---
 name: spec-manager
-description: Creates, updates, reads, searches, and validates spec entries stored as YAML in per-leaf spec/*.spec.md files, with status and taxonomy driven by spec/.config.yaml. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, or validate the spec store and config.
+description: Creates, updates, reads, searches, and validates spec entries stored as YAML in per-leaf spec/*.spec.md files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, validate the spec store and config, or change the config (status or taxonomy). Never edit spec/.config.yaml by hand; use the config actions.
 ---
 
 # Spec Manager Skill
@@ -20,6 +20,8 @@ specs:
 Each leaf file holds a `specs:` list of the specs whose ids map to that leaf. Entries are kept sorted alphabetically by `id` within each file, with a blank line between specs. `write` enforces this; a single write re-sorts an existing unsorted file.
 
 ## Config: spec/.config.yaml
+
+Never edit `spec/.config.yaml` directly — every change goes through the `config` actions in the skill's `spec.sh`, which validate the result against `.config.schema.json` and write the file atomically. Reading the file is fine.
 
 ```yaml
 status:
@@ -45,7 +47,7 @@ taxonomy:
   - `structure` — required when `layers` is a list: a nested mapping as deep as `layers` minus one: each level maps term names to the next level, and the final level is a list of term names. Term names match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
   - Missing key — no taxonomy; the membership check is skipped (`taxonomy=skipped`).
 
-Every action validates the config first; a broken config fails with `config-invalid` before anything else runs.
+Every action validates the config first; a broken config fails with `config-invalid` before anything else runs. Exception: `config set` validates only the resulting config, so it can run on — and fix — a broken one.
 
 ## Schema
 
@@ -82,29 +84,44 @@ bash <skill-dir>/spec.sh read --id <id>
 bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <state>]
 bash <skill-dir>/spec.sh find --query <keyword>
 bash <skill-dir>/spec.sh validate
+bash <skill-dir>/spec.sh config get
+bash <skill-dir>/spec.sh config set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
+bash <skill-dir>/spec.sh config add --term <term> [--parent <path>]
+bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 ```
 
 - `read` — prints the full spec YAML for `--id`.
 - `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. The script validates the config, the schema (including `--status` when enabled), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. Reports `action=create` or `action=update`.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, and status (when enabled), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings.
 - `validate` — checks the config, that all spec IDs are unique, that every spec matches the schema, that status values are configured states, that IDs match the declared taxonomy, that every spec lives in its leaf file, and that every declared taxonomy term has at least one spec. Use it as a gate before committing spec or config changes.
+- `config get` — prints the contents of `spec/.config.yaml`, or `file=missing` when the file is absent.
+- `config set` — updates `spec/.config.yaml` (creating it when absent). Each flag present replaces that part; the other parts are preserved. `--status` takes one or more states, or a single `false` to disable status; a state may carry an optional description after `:` (for example `wip:in progress`). `--layers` takes one or more layer names, or a single `false` for no layers, which drops the structure. `--structure` takes a YAML mapping of the full taxonomy structure. The resulting config is validated and written atomically.
+- `config add` — adds a term to the taxonomy structure. `--parent` is the `/`-separated path to the list that receives the term (omit it for a single-layer taxonomy); `--parent` must point to a leaf list. Use `config set --structure` to create intermediate branches or change the layers.
+- `config remove` — removes a term from the taxonomy structure: a leaf term from a list (`--parent` to the list), or a whole branch from a mapping. Parents left empty are pruned; the removal fails if it would leave the structure empty.
+
+After any `config` change, run `validate`: a declared term without specs, or a spec whose ID no longer matches the taxonomy, is reported there.
 
 ## Output contract
 
 The first stdout line is always a single key=value status line; exit 0 = success, 1 = failure, 2 = usage error.
 
-- Success: `status=success action=<read|create|update|find|validate> ...`
+- Success: `status=success action=<read|create|update|find|validate|config-get|config-set|config-add|config-remove> ...`
   - `read`: the spec YAML follows after a blank line.
   - `write`: `path=<leaf file name>` names the file the spec was written to.
   - `find`: a YAML list of `id`/`description` mappings follows after a blank line.
   - `validate`: `specs=<n> has-status=<true|false> taxonomy=<checked|skipped>`.
+  - `config-get`: the config YAML follows after a blank line, or `file=missing` with no YAML.
+  - `config-set`/`config-add`/`config-remove`: `path=spec/.config.yaml` names the file written; `add` and `remove` also report `term=<term>`.
 - Failure: `status=failed reason=<reason>` plus context keys and, where relevant, a `problems:` block. Reasons:
   - `invalid-id` — id does not match `{layer1_..._layerN}_result` (or a flat result term when layers is false)
   - `yaml-error` — a spec file or the config is not valid YAML
-  - `config-invalid` — `spec/.config.yaml` violates the skill's `.config.schema.json`
+  - `config-invalid` — `spec/.config.yaml` (or the result of a `config` change) violates the skill's `.config.schema.json`
+  - `config-missing` — `spec/.config.yaml` does not exist (for `config add` or `config remove`)
   - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), or a spec field violation (validate)
   - `status-invalid` — `--status` missing, unknown, or passed while status is disabled
   - `taxonomy-unknown` — a layer term is not declared in the config taxonomy structure
+  - `term-not-found` — a `config add`/`config remove` term, or a term in the `--parent` path, is not declared in the taxonomy structure
+  - `term-exists` — `config add` of a term that is already declared
   - `validate-failed` — duplicate IDs, schema/status/taxonomy violations, a spec in the wrong leaf file, or declared taxonomy terms with no specs
   - `not-found` — read of an unknown id (`known=` lists existing ids)
   - `spec-file-missing` — no `*.spec.md` files exist in the spec directory
@@ -116,7 +133,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
 
 1. Ask the user their status preference: no status, or which states they want.
 2. Ask the user for the taxonomy: which layers — or none (`layers: false` for flat IDs) — and, when layers are declared, the structure.
-3. Write `spec/.config.yaml` with the chosen `status` and the repo's taxonomy (migrate it from the existing `## Spec taxonomy` section in `AGENTS.md` if present).
+3. Run `config set` with the chosen `--status` and, when a taxonomy is declared, `--layers` and `--structure` (migrate those values from the existing `## Spec taxonomy` section in `AGENTS.md` if present).
 4. If a legacy `spec/SPECS.md` exists, move its specs into the per-leaf `*.spec.md` files (or `specs.spec.md` when layers is false), then delete `SPECS.md`.
 5. In `AGENTS.md`, remove the `## Spec taxonomy` section and add exactly this one line:
    `For spec structure and taxonomy, see spec/.config.yaml (managed by the spec-manager skill).`
@@ -125,7 +142,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
 ## Creating a spec (workflow)
 
 1. Read `spec/.config.yaml` (defaults apply when it is missing).
-2. Add any new term to `taxonomy.structure` first (and `layers` if the taxonomy is new).
+2. Add any new term with `config add` first (or `config set` for new layers or a new structure).
 3. Compose the ID from the layer terms.
 4. Run `write` with all fields as CLI arguments, plus `--status` when status is enabled.
 5. Verify with `read` and `validate`.
@@ -141,7 +158,7 @@ A leaf group is getting too big when its file holds more than about 10 specs, or
    - add a layer above the current top terms to rebalance the hierarchy.
    For each option, show the resulting layer names, the new leaf file names, and how the existing specs would be redistributed.
 2. When the user picks an option, perform the full refactor:
-   1. Update `taxonomy.layers` and `taxonomy.structure` in `spec/.config.yaml`.
+   1. Update the taxonomy with the `config` actions: `config set` for `--layers` and `--structure`, `config add` for new leaf terms, `config remove` for terms that no longer exist.
    2. For every spec that moves, run `write` with its new ID, copying the description, motivation, acceptance criteria, and status from the old spec.
    3. Remove the old entries from their old leaf files, and delete any leaf file left empty.
    4. Run `validate` and fix any problems until the store passes.

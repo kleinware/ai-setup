@@ -8,6 +8,10 @@
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <state>]
 //     find     --query <string>
 //     validate
+//     config   get
+//              set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
+//              add --term <term> [--parent <path>]
+//              remove --term <term> [--parent <path>]
 //
 // --spec-dir <dir> overrides the directory holding the *.spec.md files and
 // .config.yaml (default: <repo-root>/spec). Useful for tests.
@@ -52,6 +56,10 @@ Actions:
   write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <state>]
   find     --query <string>
   validate
+  config   get
+           set [--status <state> ... | false] [--layers <layer> ... | false] [--structure <yaml>]
+           add --term <term> [--parent <path>]
+           remove --term <term> [--parent <path>]
 
 Flags:
   --spec-dir <dir>  directory containing the *.spec.md files and .config.yaml (default: <repo-root>/spec)`;
@@ -61,6 +69,7 @@ const KNOWN_FLAGS: Record<string, string[]> = {
   write: ["id", "description", "motivation", "acceptance-criteria", "status"],
   find: ["query"],
   validate: [],
+  config: ["status", "layers", "structure", "term", "parent"],
 };
 
 const REQUIRED_FLAGS: Record<string, string[]> = {
@@ -68,7 +77,10 @@ const REQUIRED_FLAGS: Record<string, string[]> = {
   write: ["id", "description", "motivation", "acceptance-criteria"],
   find: ["query"],
   validate: [],
+  config: [],
 };
+
+const CONFIG_SUBCOMMANDS = ["get", "set", "add", "remove"];
 
 function kv(v: unknown): string {
   const s = String(v);
@@ -119,19 +131,29 @@ function withDetail(extra: Record<string, unknown>, detail: string | null): Reco
   return detail ? { ...extra, error: detail } : extra;
 }
 
-function parseArgs(argv: string[]): { action: string; opts: Record<string, string | string[]> } {
+function parseArgs(argv: string[]): {
+  action: string;
+  sub: string | null;
+  opts: Record<string, string | string[]>;
+} {
   const action = argv[0];
   if (!action || !(action in KNOWN_FLAGS)) usage();
+  let sub: string | null = null;
+  let rest = argv.slice(1);
+  if (action === "config") {
+    if (rest.length === 0 || !CONFIG_SUBCOMMANDS.includes(rest[0])) usage();
+    sub = rest[0];
+    rest = rest.slice(1);
+  }
   const allowed = new Set(KNOWN_FLAGS[action]);
   const opts: Record<string, string | string[]> = {};
-  const rest = argv.slice(1);
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i];
     if (!token.startsWith("--")) usage();
     const key = token.slice(2);
     if (!allowed.has(key)) usage();
     if (i + 1 >= rest.length) usage();
-    if (key === "acceptance-criteria") {
+    if (key === "acceptance-criteria" || (action === "config" && (key === "status" || key === "layers"))) {
       const values: string[] = [rest[++i]];
       while (i + 1 < rest.length && !rest[i + 1].startsWith("--")) values.push(rest[++i]);
       opts[key] = values;
@@ -142,7 +164,7 @@ function parseArgs(argv: string[]): { action: string; opts: Record<string, strin
   for (const key of REQUIRED_FLAGS[action]) {
     if (opts[key] === undefined) usage();
   }
-  return { action, opts };
+  return { action, sub, opts };
 }
 
 function checkConfig(data: Record<string, unknown>): string[] {
@@ -260,10 +282,8 @@ function deriveConfig(data: Record<string, unknown>): Config {
   return { statusEnabled, states, layers, structure };
 }
 
-function loadConfig(configPath: string): Config {
-  if (!fs.existsSync(configPath)) {
-    return { statusEnabled: false, states: [], layers: DEFAULT_LAYERS, structure: null };
-  }
+function loadRawConfig(configPath: string): Record<string, unknown> | null {
+  if (!fs.existsSync(configPath)) return null;
   let raw: string;
   try {
     raw = fs.readFileSync(configPath, "utf8");
@@ -279,7 +299,14 @@ function loadConfig(configPath: string): Config {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     fail("config-invalid", { file: CONFIG_FILE }, ["config must be a YAML mapping"]);
   }
-  const obj = data as Record<string, unknown>;
+  return data as Record<string, unknown>;
+}
+
+function loadConfig(configPath: string): Config {
+  const obj = loadRawConfig(configPath);
+  if (!obj) {
+    return { statusEnabled: false, states: [], layers: DEFAULT_LAYERS, structure: null };
+  }
   const problems = checkConfig(obj);
   if (problems.length) fail("config-invalid", { file: CONFIG_FILE }, problems);
   return deriveConfig(obj);
@@ -366,13 +393,13 @@ function specListYaml(specs: Record<string, unknown>[]): string {
   return out.join("\n");
 }
 
-function writeFile(specPath: string, specs: Record<string, unknown>[]): void {
-  const dir = path.dirname(specPath);
+function atomicWrite(filePath: string, content: string): void {
+  const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${specPath}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    fs.writeFileSync(tmp, specListYaml(specs));
-    fs.renameSync(tmp, specPath);
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, filePath);
   } catch (e) {
     try {
       fs.unlinkSync(tmp);
@@ -380,6 +407,18 @@ function writeFile(specPath: string, specs: Record<string, unknown>[]): void {
       /* ignore */
     }
     throw e;
+  }
+}
+
+function writeFile(specPath: string, specs: Record<string, unknown>[]): void {
+  atomicWrite(specPath, specListYaml(specs));
+}
+
+function writeConfig(configPath: string, data: Record<string, unknown>): void {
+  try {
+    atomicWrite(configPath, stringify(data, { lineWidth: 100 }));
+  } catch (e) {
+    fail("io-error", { file: CONFIG_FILE, error: errLine(e) });
   }
 }
 
@@ -638,6 +677,170 @@ function doValidate(specDir: string, cfg: Config): number {
   return 0;
 }
 
+function doConfigSet(args: Record<string, string | string[]>, specDir: string): number {
+  const configPath = path.join(specDir, ".config.yaml");
+  const hasStatus = args.status !== undefined;
+  const hasLayers = args.layers !== undefined;
+  const hasStructure = args.structure !== undefined;
+  if (!hasStatus && !hasLayers && !hasStructure) usage();
+  const existing = loadRawConfig(configPath);
+  const data: Record<string, unknown> = { ...(existing ?? {}) };
+  if (hasStatus) {
+    const vals = args.status as string[];
+    if (vals.length === 1 && vals[0] === "false") {
+      data.status = false;
+    } else {
+      data.status = vals.map((v) => {
+        const i = v.indexOf(":");
+        return i === -1 ? v : { state: v.slice(0, i), description: v.slice(i + 1) };
+      });
+    }
+  }
+  if (hasLayers || hasStructure) {
+    const t: Record<string, unknown> = {
+      ...((existing ?? {}).taxonomy as Record<string, unknown> | undefined),
+    };
+    if (hasLayers) {
+      const vals = args.layers as string[];
+      const isFalse = vals.length === 1 && vals[0] === "false";
+      t.layers = isFalse ? false : [...vals];
+      if (isFalse) delete t.structure;
+    }
+    if (hasStructure) {
+      let parsed: unknown;
+      try {
+        parsed = parse(args.structure as string);
+      } catch (e) {
+        fail("yaml-error", { file: "taxonomy.structure", error: errLine(e) });
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        fail("config-invalid", { file: CONFIG_FILE }, ["--structure must be a YAML mapping"]);
+      }
+      t.structure = parsed;
+    }
+    if (t.layers === false && t.structure !== undefined) {
+      fail("config-invalid", { file: CONFIG_FILE }, [
+        "taxonomy.structure must be omitted when taxonomy.layers is false",
+      ]);
+    }
+    data.taxonomy = t;
+  }
+  const problems = checkConfig(data);
+  if (problems.length) fail("config-invalid", { file: CONFIG_FILE }, problems);
+  writeConfig(configPath, data);
+  console.log(`status=success action=config-set path=${CONFIG_FILE}`);
+  return 0;
+}
+
+function doConfig(
+  args: Record<string, string | string[]>,
+  sub: string,
+  specDir: string,
+  cfg: Config,
+): number {
+  const configPath = path.join(specDir, ".config.yaml");
+
+  if (sub === "get") {
+    if (!fs.existsSync(configPath)) {
+      console.log(`status=success action=config-get file=missing`);
+      return 0;
+    }
+    let raw: string;
+    try {
+      raw = fs.readFileSync(configPath, "utf8");
+    } catch (e) {
+      fail("io-error", { file: CONFIG_FILE, error: errLine(e) });
+    }
+    console.log(`status=success action=config-get path=${CONFIG_FILE}`);
+    console.log("");
+    console.log(raw);
+    return 0;
+  }
+
+  // add / remove: edit the taxonomy structure of an existing config.
+  const term = args.term as string | undefined;
+  if (!term || !TERM_RE.test(term)) usage();
+  const existing = loadRawConfig(configPath);
+  if (!existing) fail("config-missing", { file: CONFIG_FILE });
+  const n = cfg.layers.length;
+  if (n === 0) {
+    fail("config-invalid", { file: CONFIG_FILE }, [
+      "taxonomy.layers is false; there are no taxonomy terms to modify",
+    ]);
+  }
+  const tax = existing.taxonomy as Record<string, unknown> | undefined;
+  const structure = tax?.structure;
+  if (typeof structure !== "object" || structure === null || Array.isArray(structure)) {
+    fail("config-invalid", { file: CONFIG_FILE }, ["taxonomy.structure must be a mapping"]);
+  }
+  const parent = args.parent as string | undefined;
+  const pathParts = parent === undefined ? [] : parent.split("/");
+  let node: unknown = structure;
+  const ancestors: { parent: Record<string, unknown>; key: string }[] = [];
+  for (const part of pathParts) {
+    if (typeof node !== "object" || node === null || Array.isArray(node)) {
+      fail("term-not-found", { term }, [
+        `parent path '${pathParts.join("/")}' is not a valid path in taxonomy.structure`,
+      ]);
+    }
+    const m = node as Record<string, unknown>;
+    if (!(part in m)) {
+      fail("term-not-found", { term }, [`parent term '${part}' is not declared in taxonomy.structure`]);
+    }
+    ancestors.push({ parent: m, key: part });
+    node = m[part];
+  }
+
+  if (sub === "add") {
+    if (!Array.isArray(node)) {
+      fail("term-not-found", { term }, [
+        `cannot add '${term}' here; --parent must point to a list of terms (depth ${n - 1}); use 'config set --structure' to create intermediate branches`,
+      ]);
+    }
+    if (node.includes(term)) {
+      fail("term-exists", { term, where: pathParts.join("/") || "(root)" }, [
+        `term '${term}' is already declared`,
+      ]);
+    }
+    node.push(term);
+  } else {
+    if (Array.isArray(node)) {
+      const i = node.indexOf(term);
+      if (i === -1) {
+        fail("term-not-found", { term, known: (node as unknown[]).join(",") }, [
+          `term '${term}' is not in the list; known: ${(node as unknown[]).join(", ")}`,
+        ]);
+      }
+      node.splice(i, 1);
+    } else if (typeof node === "object" && node !== null) {
+      if (!(term in (node as Record<string, unknown>))) {
+        fail("term-not-found", { term, known: Object.keys(node as Record<string, unknown>).join(",") }, [
+          `term '${term}' is not declared; known: ${Object.keys(node as Record<string, unknown>).join(", ")}`,
+        ]);
+      }
+      delete (node as Record<string, unknown>)[term];
+    } else {
+      fail("term-not-found", { term }, [`term '${term}' is not found in taxonomy.structure`]);
+    }
+    let cur: unknown = node;
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const empty = Array.isArray(cur)
+        ? cur.length === 0
+        : typeof cur === "object" && cur !== null && Object.keys(cur as Record<string, unknown>).length === 0;
+      if (!empty) break;
+      const { parent: p, key } = ancestors[i];
+      delete p[key];
+      cur = p;
+    }
+  }
+
+  const problems = checkConfig(existing);
+  if (problems.length) fail("config-invalid", { file: CONFIG_FILE }, problems);
+  writeConfig(configPath, existing);
+  console.log(`status=success action=config-${sub} term=${term} path=${CONFIG_FILE}`);
+  return 0;
+}
+
 function extractSpecDir(argv: string[]): { specDir: string | null; rest: string[] } {
   const rest: string[] = [];
   let specDir: string | null = null;
@@ -655,9 +858,14 @@ function extractSpecDir(argv: string[]): { specDir: string | null; rest: string[
 
 function main(argv: string[]): number {
   const { specDir: override, rest } = extractSpecDir(argv);
-  const { action, opts } = parseArgs(rest);
+  const { action, sub, opts } = parseArgs(rest);
   const specDir = override ?? path.join(repoRoot(process.cwd()), "spec");
-  const cfg = loadConfig(path.join(specDir, ".config.yaml"));
+  const configPath = path.join(specDir, ".config.yaml");
+  // config set validates the resulting config, so it can run on (and fix) a broken one.
+  if (action === "config" && sub === "set") {
+    return doConfigSet(opts, specDir);
+  }
+  const cfg = loadConfig(configPath);
   switch (action) {
     case "read":
       return doRead(opts, specDir, cfg);
@@ -665,6 +873,8 @@ function main(argv: string[]): number {
       return doWrite(opts, specDir, cfg);
     case "find":
       return doFind(opts, specDir, cfg);
+    case "config":
+      return doConfig(opts, sub as string, specDir, cfg);
     default:
       return doValidate(specDir, cfg);
   }

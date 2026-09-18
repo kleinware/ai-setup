@@ -1,0 +1,5 @@
+status: [pending, done]
+taxonomy:
+  layers: [a, b]
+  structure:
+    a: [b]
