@@ -7,6 +7,9 @@ taxonomy:
     - component
     - section
   structure:
+    agents:
+      agent-files:
+        - spec-curator
     isolation:
       container:
         - access
