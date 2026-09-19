@@ -7,6 +7,8 @@
 //     write    --id <id> --description <text> --motivation <text> \
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <state>]
 //     find     --query <string>
+//     query    config
+//              tasks [--status <state>] [--layer <path> ...]
 //     validate
 //     config   get
 //              set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
@@ -55,6 +57,8 @@ Actions:
   read     --id <id>
   write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <state>]
   find     --query <string>
+  query    config
+           tasks [--status <state>] [--layer <path> ...]
   validate
   config   get
            set [--status <state> ... | false] [--layers <layer> ... | false] [--structure <yaml>]
@@ -68,6 +72,7 @@ const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria", "status"],
   find: ["query"],
+  query: ["status", "layer"],
   validate: [],
   config: ["status", "layers", "structure", "term", "parent"],
 };
@@ -76,11 +81,17 @@ const REQUIRED_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria"],
   find: ["query"],
+  query: [],
   validate: [],
   config: [],
 };
 
 const CONFIG_SUBCOMMANDS = ["get", "set", "add", "remove"];
+const QUERY_SUBCOMMANDS = ["config", "tasks"];
+const SUBCOMMANDS: Record<string, string[]> = {
+  config: CONFIG_SUBCOMMANDS,
+  query: QUERY_SUBCOMMANDS,
+};
 
 function kv(v: unknown): string {
   const s = String(v);
@@ -140,8 +151,8 @@ function parseArgs(argv: string[]): {
   if (!action || !(action in KNOWN_FLAGS)) usage();
   let sub: string | null = null;
   let rest = argv.slice(1);
-  if (action === "config") {
-    if (rest.length === 0 || !CONFIG_SUBCOMMANDS.includes(rest[0])) usage();
+  if (action in SUBCOMMANDS) {
+    if (rest.length === 0 || !SUBCOMMANDS[action].includes(rest[0])) usage();
     sub = rest[0];
     rest = rest.slice(1);
   }
@@ -156,6 +167,10 @@ function parseArgs(argv: string[]): {
     if (key === "acceptance-criteria" || (action === "config" && (key === "status" || key === "layers"))) {
       const values: string[] = [rest[++i]];
       while (i + 1 < rest.length && !rest[i + 1].startsWith("--")) values.push(rest[++i]);
+      opts[key] = values;
+    } else if (action === "query" && key === "layer") {
+      const values: string[] = Array.isArray(opts[key]) ? (opts[key] as string[]) : [];
+      values.push(rest[++i]);
       opts[key] = values;
     } else {
       opts[key] = rest[++i];
@@ -633,6 +648,109 @@ function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: 
   return 0;
 }
 
+function doQueryConfig(specDir: string): number {
+  const configPath = path.join(specDir, ".config.yaml");
+  const raw = loadRawConfig(configPath);
+  if (raw === null) {
+    console.log(`status=success action=query-config file=missing`);
+    return 0;
+  }
+  const problems = checkConfig(raw);
+  if (problems.length) fail("config-invalid", { file: CONFIG_FILE }, problems);
+  const cfg = deriveConfig(raw);
+  const out: Record<string, unknown> = {
+    status: Array.isArray(raw.status) ? raw.status : false,
+    layers: cfg.layers.length ? cfg.layers : false,
+  };
+  if (cfg.structure) out.structure = cfg.structure;
+  console.log(`status=success action=query-config`);
+  console.log("");
+  console.log(stringify(out, { lineWidth: 100 }));
+  return 0;
+}
+
+function doQueryTasks(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+  const status = args.status as string | undefined;
+  const layerPaths = args.layer as string[] | undefined;
+  if (status === undefined && (!layerPaths || layerPaths.length === 0)) usage();
+  if (status !== undefined) {
+    if (!cfg.statusEnabled) {
+      fail("status-invalid", { status }, [`--status is not allowed because status is disabled in ${CONFIG_FILE}`]);
+    }
+    if (!cfg.states.includes(status)) {
+      fail("status-invalid", { status }, [`--status '${status}' is not one of the configured states: ${cfg.states.join(", ")}`]);
+    }
+  }
+  const paths: string[][] = [];
+  if (layerPaths && layerPaths.length > 0) {
+    if (cfg.layers.length === 0) {
+      fail("layer-invalid", { layer: layerPaths.join(", ") }, [
+        "--layer is not allowed because taxonomy.layers is false",
+      ]);
+    }
+    for (const p of layerPaths) {
+      const parts = p.split("/");
+      if (parts.length === 0 || parts.some((x) => x === "") || parts.length > cfg.layers.length) {
+        fail("layer-invalid", { layer: p }, [
+          `layer path must be 1..${cfg.layers.length} layer terms separated by '/'`,
+        ]);
+      }
+      if (cfg.structure) {
+        let node: unknown = cfg.structure;
+        for (let i = 0; i < parts.length; i++) {
+          if (i === cfg.layers.length - 1) {
+            if (!Array.isArray(node) || !(node as unknown[]).includes(parts[i])) {
+              fail("taxonomy-unknown", { layer: p }, [
+                `layer term '${parts[i]}' (${cfg.layers[i]}) is not declared in the taxonomy structure`,
+              ]);
+            }
+            break;
+          }
+          const m = node as Record<string, unknown>;
+          if (typeof node !== "object" || node === null || Array.isArray(node) || !(parts[i] in m)) {
+            fail("taxonomy-unknown", { layer: p }, [
+              `layer term '${parts[i]}' (${cfg.layers[i]}) is not declared in the taxonomy structure`,
+            ]);
+          }
+          node = m[parts[i]];
+        }
+      }
+      paths.push(parts);
+    }
+  }
+  const store = loadStore(specDir);
+  if (store.error && store.error !== "spec-file-missing") {
+    fail(store.error, withDetail({ file: "spec/" + STORE_GLOB }, store.detail));
+  }
+  const idRe = cfg.layers.length ? idRegex(cfg.layers) : null;
+  const matches = Object.values(store.files)
+    .flat()
+    .filter((s) => {
+      if (status !== undefined && s.status !== status) return false;
+      if (paths.length) {
+        const id = String(s.id);
+        if (!idRe || !idRe.test(id)) return false;
+        const idParts = id.split("_").slice(0, cfg.layers.length);
+        if (!paths.some((p) => p.every((t, i) => idParts[i] === t))) return false;
+      }
+      return true;
+    });
+  const results = matches.map((s) => {
+    const m: Record<string, unknown> = { id: s.id, description: s.description };
+    if (cfg.statusEnabled) m.status = s.status;
+    return m;
+  });
+  const line =
+    `status=success action=query-tasks` +
+    (status !== undefined ? ` status=${kv(status)}` : "") +
+    paths.map((p) => ` layer=${kv(p.join("/"))}`).join("") +
+    ` count=${matches.length}`;
+  console.log(line);
+  console.log("");
+  console.log(stringify(results, { lineWidth: 100 }));
+  return 0;
+}
+
 function doValidate(specDir: string, cfg: Config): number {
   const store = loadStore(specDir);
   if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB }, store.detail));
@@ -873,6 +991,8 @@ function main(argv: string[]): number {
       return doWrite(opts, specDir, cfg);
     case "find":
       return doFind(opts, specDir, cfg);
+    case "query":
+      return sub === "config" ? doQueryConfig(specDir) : doQueryTasks(opts, specDir, cfg);
     case "config":
       return doConfig(opts, sub as string, specDir, cfg);
     default:

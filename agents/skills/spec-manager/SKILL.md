@@ -1,6 +1,6 @@
 ---
 name: spec-manager
-description: Creates, updates, reads, searches, and validates spec entries stored as YAML in per-leaf spec/*.spec.md files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, validate the spec store and config, or change the config (status or taxonomy). Never edit spec/.config.yaml by hand; use the config actions.
+description: Creates, updates, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.md files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
 ---
 
 # Spec Manager Skill
@@ -19,9 +19,13 @@ specs:
 
 Each leaf file holds a `specs:` list of the specs whose ids map to that leaf. Entries are kept sorted alphabetically by `id` within each file, with a blank line between specs. `write` enforces this; a single write re-sorts an existing unsorted file.
 
+## Using the CLI (do not parse specs yourself)
+
+Do not read, grep, or parse `spec/*.spec.md` or `spec/.config.yaml` with file or search tools. Every read, search, query, and change must go through the `spec.sh` CLI: use `query config` for the repo config (status, layers, taxonomy), `query tasks` to list specs by status and/or layer, `read` for a single spec, `find` for keyword search, and `validate` for store health. The CLI applies the same parsing and validation as the store, so its output is the single source of truth.
+
 ## Config: spec/.config.yaml
 
-Never edit `spec/.config.yaml` directly — every change goes through the `config` actions in the skill's `spec.sh`, which validate the result against `.config.schema.json` and write the file atomically. Reading the file is fine.
+Never edit `spec/.config.yaml` directly — every change goes through the `config` actions in the skill's `spec.sh`, which validate the result against `.config.schema.json` and write the file atomically. Query its contents with `query config` rather than parsing the file yourself.
 
 ```yaml
 status:
@@ -83,6 +87,8 @@ Run from anywhere in the repo; the script resolves the repo root itself. Any act
 bash <skill-dir>/spec.sh read --id <id>
 bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <state>]
 bash <skill-dir>/spec.sh find --query <keyword>
+bash <skill-dir>/spec.sh query config
+bash <skill-dir>/spec.sh query tasks [--status <state>] [--layer <path> ...]
 bash <skill-dir>/spec.sh validate
 bash <skill-dir>/spec.sh config get
 bash <skill-dir>/spec.sh config set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
@@ -93,6 +99,8 @@ bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 - `read` — prints the full spec YAML for `--id`.
 - `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. The script validates the config, the schema (including `--status` when enabled), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. Reports `action=create` or `action=update`.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, and status (when enabled), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings.
+- `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of states, each a string or a `{state, description}` object), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
+- `query tasks` — lists the specs matching `--status <state>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings.
 - `validate` — checks the config, that all spec IDs are unique, that every spec matches the schema, that status values are configured states, that IDs match the declared taxonomy, that every spec lives in its leaf file, and that every declared taxonomy term has at least one spec. Use it as a gate before committing spec or config changes.
 - `config get` — prints the contents of `spec/.config.yaml`, or `file=missing` when the file is absent.
 - `config set` — updates `spec/.config.yaml` (creating it when absent). Each flag present replaces that part; the other parts are preserved. `--status` takes one or more states, or a single `false` to disable status; a state may carry an optional description after `:` (for example `wip:in progress`). `--layers` takes one or more layer names, or a single `false` for no layers, which drops the structure. `--structure` takes a YAML mapping of the full taxonomy structure. The resulting config is validated and written atomically.
@@ -105,10 +113,12 @@ After any `config` change, run `validate`: a declared term without specs, or a s
 
 The first stdout line is always a single key=value status line; exit 0 = success, 1 = failure, 2 = usage error.
 
-- Success: `status=success action=<read|create|update|find|validate|config-get|config-set|config-add|config-remove> ...`
+- Success: `status=success action=<read|create|update|find|query-config|query-tasks|validate|config-get|config-set|config-add|config-remove> ...`
   - `read`: the spec YAML follows after a blank line.
   - `write`: `path=<leaf file name>` names the file the spec was written to.
   - `find`: a YAML list of `id`/`description` mappings follows after a blank line.
+  - `query-config`: the normalized config YAML follows after a blank line, or `file=missing` with no YAML.
+  - `query-tasks`: a YAML list of `id`/`description`/`status` (status only when enabled) mappings follows after a blank line; the status line echoes `status=<state>` and one `layer=<path>` per layer filter, plus `count=<n>`.
   - `validate`: `specs=<n> has-status=<true|false> taxonomy=<checked|skipped>`.
   - `config-get`: the config YAML follows after a blank line, or `file=missing` with no YAML.
   - `config-set`/`config-add`/`config-remove`: `path=spec/.config.yaml` names the file written; `add` and `remove` also report `term=<term>`.
@@ -120,6 +130,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), or a spec field violation (validate)
   - `status-invalid` — `--status` missing, unknown, or passed while status is disabled
   - `taxonomy-unknown` — a layer term is not declared in the config taxonomy structure
+  - `layer-invalid` — `--layer` passed while `taxonomy.layers` is `false`, or a layer path with the wrong number of terms
   - `term-not-found` — a `config add`/`config remove` term, or a term in the `--parent` path, is not declared in the taxonomy structure
   - `term-exists` — `config add` of a term that is already declared
   - `validate-failed` — duplicate IDs, schema/status/taxonomy violations, a spec in the wrong leaf file, or declared taxonomy terms with no specs
