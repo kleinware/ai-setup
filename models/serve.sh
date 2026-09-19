@@ -5,7 +5,7 @@ set -euo pipefail
 MODELS_ROOT="/mnt/mine/models/llm"
 PRESET_FILE="models.ini"
 PORT=8778
-BRIDGE_HOST="172.17.0.1"
+BRIDGE_HOST="$(docker network inspect -f '{{(index .IPAM.Config 0).Gateway}}' bridge)"
 
 for arg in "$@"; do
     case "$arg" in
