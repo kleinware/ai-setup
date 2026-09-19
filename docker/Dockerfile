@@ -5,6 +5,7 @@ ARG OPENCODE_VERSION=1.18.31
 ARG LAZYGIT_VERSION=0.65.1
 ARG BUN_VERSION=1.4.2
 ARG PLAYWRIGHT_VERSION=1.63.0
+ARG GLOW_VERSION=3.0.0
 
 # Base development dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -62,6 +63,14 @@ RUN LAZYGIT_ARCH="$(uname -m | sed -e 's/aarch64/arm64/')" \
     && tar xf lazygit.tar.gz lazygit \
     && install -m 755 lazygit /usr/local/bin/lazygit \
     && rm lazygit lazygit.tar.gz
+
+# Glow
+RUN GLOW_ARCH="$(uname -m | sed -e 's/aarch64/arm64/')" \
+    && curl -fsLo glow.tar.gz \
+       "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_${GLOW_ARCH}.tar.gz" \
+    && tar xf glow.tar.gz \
+    && install -m 755 "glow_${GLOW_VERSION}_Linux_${GLOW_ARCH}/glow" /usr/local/bin/glow \
+    && rm -rf glow.tar.gz "glow_${GLOW_VERSION}_Linux_${GLOW_ARCH}"
 
 # Bun
 RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
