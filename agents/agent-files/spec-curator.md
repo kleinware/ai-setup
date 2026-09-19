@@ -2,6 +2,7 @@
 description: Curates the repo's spec store. Works with the user to create, refine, and audit formal specs stored as per-leaf YAML files in spec/ through the spec-manager skill: surfaces ambiguity, helps bottom out one-way-door decisions with the motivation captured in the spec, refines the repo taxonomy as scope becomes clear, and audits the store against observed behavior. Ends any turn with pending clarifications in a single question tool call.
 mode: primary
 permission:
+   question: allow
    todowrite: deny
    doom_loop: deny
    task: deny
