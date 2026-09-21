@@ -21,7 +21,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
 - `~/.agents` is a symlink to `agents/` — edit skills in this repo.
 - `spec/` — canonical specs, one YAML file per taxonomy leaf (`<leaf>.spec.yaml`; `specs.spec.yaml` when `taxonomy.layers` is `false`), managed via the `spec-manager` skill.
 - `spec/.config.yaml` — spec-manager config (status and taxonomy); for spec structure details, see it.
-- `docker/` — isolated agent containers: `dev-repo` (`up` / `ls` / `down`), `docker-compose.yml`, `Dockerfile`, `container_herdr_config.toml`, `container_opencode.json`, plus `README.md` with SSH/herdr setup.
+- `docker/` — isolated agent containers: `dev-repo` (`up` / `ls` / `down`), `dev-repo-uat.sh` (end-to-end UAT of the container lifecycle: up, verify, recreate, verify, down, verify), `docker-compose.yml`, `Dockerfile`, `container_herdr_config.toml`, `container_opencode.json`, plus `README.md` with SSH/herdr setup.
 - `models/` — local model serving and benchmarking: `serve.sh` (llama-server + socat bridge for containers), `models.ini` (llama-server presets), `benchmark-context.sh` (llama-cli throughput table), `test_image.png`.
 - `devtools/` — developer workflow scripts, run inside herdr panes (e.g. `devtools/new-worktree.sh` splits the pane into opencode + lazygit after creating a worktree).
 - `.githooks/` — hook sources; `setup.sh` symlinks them into `.git/hooks/`.
