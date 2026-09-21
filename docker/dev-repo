@@ -12,6 +12,7 @@ Commands:
   up --no-add-herdr-machine   Print the herdr machine command instead of registering the machine
   ls           List running dev project containers
   down         Tear down the project container and its volumes
+  down --force Tear down without the confirmation prompt (for scripting)
 
 up must be run from the git root of a worktree whose folder is named 'main'.
 The project name is the name of the folder containing 'main'.
@@ -312,8 +313,10 @@ up_all() {
 }
 
 # Tear down the project's compose stack (container and named volumes) after
-# a yes/no confirmation.
+# a yes/no confirmation. Pass "1" as the first argument to skip the
+# confirmation and tear down unconditionally (non-interactive mode).
 down_project() {
+    local force="${1:-0}"
     local script_dir
     script_dir="$(resolve_script_dir)"
 
@@ -366,13 +369,15 @@ down_project() {
     if [[ -n "$WORKSPACE_SOURCE" ]]; then
         echo "  /workspace maps to this folder on the host: ${WORKSPACE_SOURCE}"
     fi
-    echo
-    printf 'Tear down %s? [y/N] ' "$PROJECT_NAME"
-    local answer
-    read -r answer
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        return 0
+    if [[ "$force" != "1" ]]; then
+        echo
+        printf 'Tear down %s? [y/N] ' "$PROJECT_NAME"
+        local answer
+        read -r answer
+        if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            return 0
+        fi
     fi
 
     # The compose file still interpolates these variables, so export the
@@ -524,7 +529,14 @@ case "$COMMAND" in
         ;;
 
     down)
-        down_project
+        FORCE=0
+        for arg in "$@"; do
+            case "$arg" in
+                --force) FORCE=1 ;;
+                *) usage ;;
+            esac
+        done
+        down_project "$FORCE"
         ;;
 
     *)

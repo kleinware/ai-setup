@@ -53,6 +53,9 @@ host key (connection fingerprint) for the host, and any files in the container
 outside /workspace. Files under /workspace stay on the host in the project
 folder.
 
+With `--force` it skips the confirmation and tears down unconditionally, so
+it can be used in scripts: `dev-repo down --force`.
+
 # Herdr
 
 Nested herdr sessions are not allowed. `dev-repo up` registers the container
