@@ -6,12 +6,22 @@ usage() {
 Usage: dev-repo <command> [args]
 
 Commands:
-  up <ssh-port>  Build and start the project container
-  up --all       Recreate all running dev project containers
-  ls             List running dev project containers
+  up           Build and start the project container
+  up --all     Recreate all running dev project containers
+  ls           List running dev project containers
 
-up <ssh-port> must be run from the git root of a worktree whose folder is
-named 'main'. The project name is the name of the folder containing 'main'.
+up must be run from the git root of a worktree whose folder is named 'main'.
+The project name is the name of the folder containing 'main'.
+
+Host ports are assigned automatically and encoded in the compose project name:
+dev-<project>-<range-start> (for example dev-my-project-2240). The range
+start is the first free range at or above 2200 in increments of 10, checked
+in the order 2200, 2210, 2220, ...; ranges in use are read from the names of
+existing dev containers (running or not). The SSH port is range start + 2
+(ending in 2, mapped to container port 22) and the web port is range start + 8
+(ending in 8, mapped to container port 8080). The other endings in each group
+of ten are reserved for future mappings. An existing container is recreated
+with its current ports.
 EOF
     exit 1
 }
@@ -49,41 +59,99 @@ require_host_files() {
     fi
 }
 
+# All dev- compose projects and their container IDs, running or not, as
+# "<project>\t<id>" lines.
+dev_projects() {
+    docker ps -a --format '{{json .}}' | jq -sr '
+        [ .[]
+          | (.Labels | split(",") |
+              map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
+              first) as $proj
+          | select($proj != null and ($proj | startswith("dev-")))
+          | [ $proj, .ID ]
+        ] | map(@tsv) | join("\n")'
+}
+
+# Port range starts (encoded in container names) already in use by dev-
+# containers, running or not, one per line.
+used_port_ranges() {
+    local name
+    local rows
+    rows="$(dev_projects)"
+    while IFS=$'\t' read -r name _; do
+        if [[ "$name" =~ ^dev-.+-([0-9]{4,})$ ]]; then
+            echo "${BASH_REMATCH[1]}"
+        fi
+    done <<<"$rows" | sort -u
+}
+
+# Compose project name and container ID of an existing container for this
+# project, if any: "dev-<project>-<range-start>". Prints "<name> <id>".
+existing_project() {
+    local project="$1"
+    local prefix="dev-${project}"
+    local rows name cid
+    rows="$(dev_projects)"
+    while IFS=$'\t' read -r name cid; do
+        if [[ "$name" =~ ^${prefix}-([0-9]{4,})$ ]]; then
+            echo "$name $cid"
+            return 0
+        fi
+    done <<<"$rows"
+    return 1
+}
+
+# Host ports of a container: "<ssh port> <web port>", the web port empty when
+# unmapped.
+container_ports() {
+    docker inspect --format '{{json .HostConfig.PortBindings}}' "$1" | jq -r '
+        (.["22/tcp"] | if type == "array" and length > 0 then .[0].HostPort else "" end) as $ssh
+        | (.["8080/tcp"] | if type == "array" and length > 0 then .[0].HostPort else "" end) as $web
+        | "\($ssh) \($web)"'
+}
+
+# Pick the first free port range at or above 2200, in increments of 10.
+# Sets RANGE_START, SSH_PORT (range start + 2), and WEB_PORT (range start + 8).
+assign_port_range() {
+    local ranges base
+    ranges="$(used_port_ranges)"
+    for ((base = 2200; base <= 65520; base += 10)); do
+        if ! grep -qx "$base" <<<"$ranges"; then
+            RANGE_START="$base"
+            SSH_PORT=$((base + 2))
+            WEB_PORT=$((base + 8))
+            return 0
+        fi
+    done
+    echo "No free port range at or above 2200 is available." >&2
+    return 1
+}
+
 # Recreate every running dev- compose project (as listed by ls), using each
-# container's existing host SSH port and /workspace bind mount source.
+# container's existing host ports and /workspace bind mount source.
 up_all() {
     local script_dir
     script_dir="$(resolve_script_dir)"
 
     require_host_files
 
-    local containers
-    containers="$(docker ps --filter status=running --format '{{json .}}')"
-
-    local rows=""
-    if [[ -n "$containers" ]]; then
-        rows="$(jq -sr '
-            [ .[]
-              | (.Labels | split(",") |
-                  map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
-                  first) as $proj
-              | select($proj != null and ($proj | startswith("dev-")))
-              | (if (.Ports | length) > 0
-                 then (.Ports | split(",") | .[0] | capture(":(?<p>[0-9]+)->") | .p)
-                 else null
-                 end) as $port
-              | select($port != null)
-              | [ .ID, $proj, $port ]
-            ] | map(@tsv) | join("\n")' <<<"$containers")"
-    fi
+    local rows
+    rows="$(docker ps --filter status=running --format '{{json .}}' | jq -sr '
+        [ .[]
+          | (.Labels | split(",") |
+              map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
+              first) as $proj
+          | select($proj != null and ($proj | startswith("dev-")))
+          | [ .ID, $proj ]
+        ] | map(@tsv) | join("\n")')"
 
     if [[ -z "$rows" ]]; then
         echo "No running dev project containers."
         return 0
     fi
 
-    local cid proj port source
-    while IFS=$'\t' read -r cid proj port; do
+    local cid proj ports ssh web source
+    while IFS=$'\t' read -r cid proj; do
         source="$(docker inspect --format \
             '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}' \
             "$cid")"
@@ -92,8 +160,16 @@ up_all() {
             continue
         fi
 
-        export SSH_PORT="$port"
-        export WEB_PORT="$((10#$port + 1))"
+        ports="$(container_ports "$cid")"
+        read -r ssh web <<<"$ports"
+        if [[ ! "$ssh" =~ ^[0-9]+$ ]]; then
+            echo "Skipping $proj: no SSH port mapping." >&2
+            continue
+        fi
+        [[ "${web:-}" =~ ^[0-9]+$ ]] || web=$((10#$ssh + 6))
+
+        export SSH_PORT="$ssh"
+        export WEB_PORT="$web"
         export PROJECT_DIR="$source"
 
         docker compose \
@@ -114,9 +190,7 @@ case "$COMMAND" in
         if [[ $# -eq 1 && "$1" == "--all" ]]; then
             up_all
         else
-            [[ $# -eq 1 ]] || usage
-
-            SSH_PORT="$1"
+            [[ $# -eq 0 ]] || usage
 
             # Must be run from the git root, and that folder must be named 'main'.
             CWD="$(pwd -P)"
@@ -142,15 +216,17 @@ case "$COMMAND" in
                 exit 1
             fi
 
-            # Validate the host SSH port; the web port is SSH port + 1,
-            # so the SSH port must leave room for it.
-            if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] ||
-               (( 10#$SSH_PORT < 1024 || 10#$SSH_PORT > 65534 )); then
-                echo "SSH port must be between 1024 and 65534" >&2
-                exit 1
+            # Recreate an existing container with its current ports, or pick
+            # the first free port range and name the container after it.
+            if EXISTING="$(existing_project "$PROJECT")"; then
+                read -r PROJECT_NAME _ <<<"$EXISTING"
+                RANGE_START="${PROJECT_NAME##*-}"
+            else
+                assign_port_range
+                PROJECT_NAME="dev-${PROJECT}-${RANGE_START}"
             fi
-
-            WEB_PORT=$((SSH_PORT + 1))
+            SSH_PORT=$((10#$RANGE_START + 2))
+            WEB_PORT=$((10#$RANGE_START + 8))
             export SSH_PORT WEB_PORT
 
             # Create the worktrees directory next to 'main' if it doesn't exist.
@@ -162,13 +238,17 @@ case "$COMMAND" in
 
             docker compose \
                 -f "${SCRIPT_DIR}/docker-compose.yml" \
-                -p "dev-${PROJECT}" \
+                -p "$PROJECT_NAME" \
                 up -d --build
 
-            SSH_HOST="dev-${PROJECT}"
+            SSH_HOST="$PROJECT_NAME"
 
             echo
             echo "Project '$PROJECT' is running."
+            echo
+            echo "Ports:"
+            echo "  SSH: 127.0.0.1:${SSH_PORT} -> 22"
+            echo "  Web: 127.0.0.1:${WEB_PORT} -> 8080"
             echo
             echo "Add the following to ~/.ssh/config:"
             echo

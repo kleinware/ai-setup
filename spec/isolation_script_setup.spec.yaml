@@ -1,4 +1,18 @@
 specs:
+  - id: isolation_script_setup_auto-ports
+    description: dev-repo up auto-assigns host ports and encodes the port range start in the compose
+      project name.
+    motivation: Users should not have to pick ports; the fixed scheme (SSH 2202/2212/... with web six
+      above) keeps port pairs predictable, and reading the ranges in use from existing container
+      names makes assignment conflict-free.
+    acceptance_criteria:
+      - When no container exists for the project, up picks the first range start at or above 2200 in
+        increments of 10 (2200, 2210, 2220, ...) not used by another dev container, running or not,
+        names the compose project dev-<project>-<range-start>, and maps range start + 2 to container
+        port 22 and range start + 8 to container port 8080.
+      - When a container already exists for the project, up recreates it with the same ports.
+    status: done
+
   - id: isolation_script_setup_derives-project
     description: dev-repo up derives the project name from the working directory and creates the
       worktrees directory.
@@ -26,10 +40,12 @@ specs:
     status: done
 
   - id: isolation_script_setup_validates-args
-    description: dev-repo up validates its argument and working directory before running docker compose.
+    description: dev-repo up takes no port argument and validates its working directory before running
+      docker compose.
     motivation: The compose project name is derived from the folder layout and must be a safe
-      identifier, the host SSH port must be a valid user port, and the script only works when
-      invoked from the correct location.
+      identifier, the host ports are assigned automatically, and the script only works when invoked
+      from the correct location.
     acceptance_criteria:
       - An unknown command prints usage and exits non-zero.
+      - up with a port argument prints usage and exits non-zero.
     status: done

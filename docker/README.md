@@ -8,17 +8,13 @@ ssh-keygen -t ed25519 \
 
 # SSH Config
 
-```
-Host dev-project-a
-    HostName 127.0.0.1
-    Port 2201
-    User agent
-    IdentityFile ~/.ssh/herdr-container
-    IdentitiesOnly yes
+`dev-repo up` assigns the host ports automatically and prints the
+`~/.ssh/config` block to add:
 
-Host dev-project-b
+```
+Host dev-my-project-2240
     HostName 127.0.0.1
-    Port 2202
+    Port 2242
     User agent
     IdentityFile ~/.ssh/herdr-container
     IdentitiesOnly yes
@@ -39,8 +35,8 @@ line only once) and writes the container build timestamp to
 
 # Web
 
-Port 8080 inside the container is published on the host as the SSH port + 1
-(e.g. SSH port 2201 -> http://127.0.0.1:2202/), so agent-started web servers
+Port 8080 inside the container is published on the host as the SSH port + 6
+(e.g. SSH port 2242 -> http://127.0.0.1:2248/), so agent-started web servers
 can be driven with a browser from the host.
 
 # Herdr

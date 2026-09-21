@@ -39,13 +39,14 @@ specs:
     status: done
 
   - id: isolation_container_setup_web-port
-    description: The container's web server port 8080 is exposed on the host as the SSH port + 1, bound
+    description: The container's web server port 8080 is exposed on the host as the SSH port + 6, bound
       to 127.0.0.1.
     motivation: Agents spin up web servers inside the container and drive a browser to test them, so
-      port 8080 must be reachable from the host. Publishing it one above the SSH port keeps the pair
-      easy to remember.
+      port 8080 must be reachable from the host. Publishing it six above the SSH port (xxx8 next to
+      xxx2) keeps the pair easy to remember and leaves the other endings of each group of ten free
+      for future port mappings.
     acceptance_criteria:
-      - docker compose maps 127.0.0.1:<ssh-port+1> to container port 8080.
+      - docker compose maps 127.0.0.1:<ssh-port+6> to container port 8080.
       - A server listening on 8080 inside a running container is reachable at
         http://127.0.0.1:<web-port> from the host.
     status: done

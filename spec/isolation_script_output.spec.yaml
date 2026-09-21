@@ -22,5 +22,5 @@ specs:
     motivation: Users need the exact URL to open the container's web server in a browser and verify site
       behavior.
     acceptance_criteria:
-      - The output includes http://127.0.0.1:<web-port>/ where <web-port> is the SSH port + 1.
+      - The output includes http://127.0.0.1:<web-port>/ where <web-port> is the SSH port + 6.
     status: done
