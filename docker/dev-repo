@@ -150,6 +150,43 @@ update_ssh_config() {
     fi
 }
 
+# Register the container as a herdr machine when herdr is installed, or
+# print the command to run. Prints its summary bullet lines.
+register_herdr_machine() {
+    local host="$1" label="$2"
+
+    if ! command -v herdr >/dev/null 2>&1; then
+        echo "- Register with herdr (nested herdr sessions are not allowed):"
+        echo "    herdr machine add ${host} --label \"${label}\""
+        return 0
+    fi
+
+    local existing
+    existing="$(herdr machine list --json | jq -r --arg host "$host" \
+        '[ .[] | select(.target == $host) ] | length' 2>/dev/null)" || existing="0"
+    if [[ "$existing" =~ ^[0-9]+$ ]] && (( existing > 0 )); then
+        echo "- Machine already registered with herdr"
+        return 0
+    fi
+
+    # The container's sshd may not be listening yet, so retry a few times.
+    local attempt
+    for ((attempt = 1; attempt <= 5; attempt++)); do
+        if herdr machine add "$host" --label "$label" >/dev/null; then
+            echo "- Added machine ${host} to herdr (label ${label})"
+            return 0
+        fi
+        if (( attempt < 5 )); then
+            sleep 1
+        fi
+    done
+
+    echo "Warning: failed to register ${host} with herdr; run it manually:" >&2
+    echo "    herdr machine add ${host} --label \"${label}\"" >&2
+    echo "- Failed to add machine ${host} to herdr (run the command above manually)"
+    return 0
+}
+
 # Pick the first free port range at or above 2200, in increments of 10.
 # Sets RANGE_START, SSH_PORT (range start + 2), and WEB_PORT (range start + 8).
 assign_port_range() {
@@ -366,8 +403,7 @@ case "$COMMAND" in
             echo "- SSH port ${SSH_PORT} -> container port 22"
             echo "- Web port ${WEB_PORT} -> container port 8080 (http://127.0.0.1:${WEB_PORT}/)"
             echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
-            echo "- Register with herdr (nested herdr sessions are not allowed):"
-            echo "    herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
+            register_herdr_machine "$SSH_HOST" "$PROJECT"
         fi
         ;;
 
