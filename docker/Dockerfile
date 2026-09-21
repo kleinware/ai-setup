@@ -106,6 +106,14 @@ RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
         playwright install --with-deps chromium \
     && chown -R agent:agent /opt/ms-playwright
 
+# Bake the repo's setup files into the image so the start script can copy
+# them without bind-mounting them from the host repo.
+COPY docker/container_opencode.json /opt/setup-src/docker/container_opencode.json
+COPY docker/herdr_config.toml /opt/setup-src/docker/herdr_config.toml
+COPY agents/skills /opt/setup-src/agents/skills
+COPY agents/agent-files /opt/setup-src/agents/agent-files
+COPY devtools /opt/setup-src/devtools
+
 # Configure SSH for key-only access
 RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
     /etc/ssh/authorized_keys \
@@ -138,15 +146,15 @@ RUN printf '%s\n' \
     'fi' \
     'chown agent:agent /home/agent' \
     'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
-    'REPO=/workspace/main' \
+    'SETUP=/opt/setup-src' \
     'for path in docker/container_opencode.json docker/herdr_config.toml agents/skills agents/agent-files devtools; do' \
-    '    [ -e "$REPO/$path" ] || { echo "missing $REPO/$path" >&2; exit 1; }' \
+    '    [ -e "$SETUP/$path" ] || { echo "missing $SETUP/$path" >&2; exit 1; }' \
     'done' \
-    'install -m 644 "$REPO/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
-    'install -m 644 "$REPO/docker/herdr_config.toml" /home/agent/.config/herdr/config.toml' \
-    'rsync -a --delete "$REPO/agents/skills/" /home/agent/.config/opencode/skills/' \
-    'rsync -a --delete "$REPO/agents/agent-files/" /home/agent/.config/opencode/agents/' \
-    'rsync -a --delete "$REPO/devtools/" /home/agent/bin/' \
+    'install -m 644 "$SETUP/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
+    'install -m 644 "$SETUP/docker/herdr_config.toml" /home/agent/.config/herdr/config.toml' \
+    'rsync -a --delete "$SETUP/agents/skills/" /home/agent/.config/opencode/skills/' \
+    'rsync -a --delete "$SETUP/agents/agent-files/" /home/agent/.config/opencode/agents/' \
+    'rsync -a --delete "$SETUP/devtools/" /home/agent/bin/' \
     'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/bin' \
     'if ! grep -qF "export PATH=\"/home/agent/bin:\$PATH\"" /home/agent/.bashrc 2>/dev/null; then' \
     '    echo "export PATH=\"/home/agent/bin:\$PATH\"" >> /home/agent/.bashrc' \

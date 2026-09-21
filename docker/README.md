@@ -24,10 +24,10 @@ Host dev-my-project-2240
 
 At container start, the startup script copies `container_opencode.json`,
 `herdr_config.toml`, `agents/skills/`, `agents/agent-files/`, and `devtools/`
-from the repo (mounted at `/workspace`) into the container: the config and
-agent files into the agent's config dirs, and `devtools/` into
-`/home/agent/bin`, so host-side edits or moving the repo do not affect
-running containers. Recreate the container to refresh them. The gitconfig is
+from the image's baked-in setup files (`/opt/setup-src`, copied from the repo
+at build time) into the container: the config and agent files into the
+agent's config dirs, and `devtools/` into `/home/agent/bin`, so host-side
+edits or moving the repo do not affect running containers. Recreate the container to refresh them. The gitconfig is
 still bind-mounted read-only to `/home/agent/.gitconfig`. The startup script
 also prepends `/home/agent/bin` to PATH in `/home/agent/.bashrc` (adding the
 line only once) and writes the container build timestamp to
