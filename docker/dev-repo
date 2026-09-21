@@ -3,11 +3,11 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: ai-repo <command> [args]
+Usage: dev-repo <command> [args]
 
 Commands:
   up <ssh-port>  Build and start the project container
-  ls            List running AI project containers
+  ls            List running dev project containers
 
 Must be run from the git root of a worktree whose folder is named 'main'.
 The project name is the name of the folder containing 'main'.
@@ -64,7 +64,7 @@ case "$COMMAND" in
 
         # Resolve paths relative to the script, not the current directory.
         # Follow symlinks so this works when the script is invoked through
-        # a symlink (e.g. ~/bin/ai-repo -> docker/ai-repo.sh).
+        # a symlink (e.g. ~/bin/dev-repo -> docker/dev-repo).
         SCRIPT_SOURCE="${BASH_SOURCE[0]}"
         while [[ -L "$SCRIPT_SOURCE" ]]; do
             SCRIPT_LINK_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd -P)"
@@ -95,10 +95,10 @@ case "$COMMAND" in
 
         docker compose \
             -f "${SCRIPT_DIR}/docker-compose.yml" \
-            -p "ai-${PROJECT}" \
+            -p "dev-${PROJECT}" \
             up -d --build
 
-        SSH_HOST="ai-${PROJECT}"
+        SSH_HOST="dev-${PROJECT}"
 
         echo
         echo "Project '$PROJECT' is running."
@@ -131,7 +131,7 @@ EOF
                   | (.Labels | split(",") |
                       map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
                       first) as $proj
-                  | select($proj != null and ($proj | startswith("ai-")))
+                   | select($proj != null and ($proj | startswith("dev-")))
                   | (if (.Ports | length) > 0
                      then (.Ports | split(",") | .[0] | capture(":(?<p>[0-9]+)->") | .p)
                      else "-"
@@ -143,7 +143,7 @@ EOF
         fi
 
         if [[ -z "$rows" ]]; then
-            echo "No running AI project containers."
+            echo "No running dev project containers."
         else
             printf '%-20s %5s  %s\n' "PROJECT" "PORT" "STATUS"
             while IFS=$'\t' read -r proj port status; do

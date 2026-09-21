@@ -9,14 +9,14 @@ ssh-keygen -t ed25519 \
 # SSH Config
 
 ```
-Host ai-project-a
+Host dev-project-a
     HostName 127.0.0.1
     Port 2201
     User agent
     IdentityFile ~/.ssh/herdr-container
     IdentitiesOnly yes
 
-Host ai-project-b
+Host dev-project-b
     HostName 127.0.0.1
     Port 2202
     User agent
@@ -46,5 +46,5 @@ can be driven with a browser from the host.
 Nested herdr sessions are not allowed, so register each container with herdr on the host:
 
 ```
-herdr machine add ai-project-a --label "project-a"
+herdr machine add dev-project-a --label "project-a"
 ```

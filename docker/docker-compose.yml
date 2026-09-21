@@ -1,10 +1,10 @@
 services:
   dev:
-    image: local/ai-repo:latest
+    image: local/dev-repo:latest
     build:
       context: .
 
-    hostname: ai-${COMPOSE_PROJECT_NAME}
+    hostname: dev-${COMPOSE_PROJECT_NAME}
 
     restart: unless-stopped
 

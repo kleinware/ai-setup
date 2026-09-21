@@ -4,8 +4,7 @@ specs:
     motivation: The agent needs the host user's git identity and settings so that git operations inside
       the container behave the same as on the host.
     acceptance_criteria:
-      - The host gitconfig is mounted read-only at /home/agent/.gitconfig.
-      - ai-repo.sh up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
+      - dev-repo up exits non-zero with 'gitconfig not found' if the host gitconfig does not exist.
     status: done
 
   - id: isolation_container_setup_host-timezone
