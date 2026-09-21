@@ -5,13 +5,13 @@
 //   spec.sh [--spec-dir <dir>] <action> [flags]
 //     read     --id <id>
 //     write    --id <id> --description <text> --motivation <text> \
-//         --acceptance-criteria <criterion> [<criterion> ...] [--status <state>]
+//         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>]
 //     find     --query <string>
 //     query    config
-//              tasks [--status <state>] [--layer <path> ...]
+//              tasks [--status <name>] [--layer <path> ...]
 //     validate
 //     config   get
-//              set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
+//              set [--status <name>:<description> ...] [--layers <layer> ...] [--structure <yaml>]
 //              add --term <term> [--parent <path>]
 //              remove --term <term> [--parent <path>]
 //
@@ -55,13 +55,13 @@ const USAGE = `Usage:
 
 Actions:
   read     --id <id>
-  write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <state>]
-  find     --query <string>
-  query    config
-           tasks [--status <state>] [--layer <path> ...]
+   write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>]
+   find     --query <string>
+   query    config
+            tasks [--status <name>] [--layer <path> ...]
   validate
-  config   get
-           set [--status <state> ... | false] [--layers <layer> ... | false] [--structure <yaml>]
+   config   get
+            set [--status <name>:<description> ... | false] [--layers <layer> ... | false] [--structure <yaml>]
            add --term <term> [--parent <path>]
            remove --term <term> [--parent <path>]
 
@@ -192,7 +192,7 @@ function checkConfig(data: Record<string, unknown>): string[] {
       if (e.keyword === "oneOf" || e.keyword === "anyOf") {
         if (e.instancePath === "") {
           problems.push(
-            "config: status must be false, a list of state strings, or a list of {state, description?} objects",
+            "config: status must be false or a list of {name, description} objects",
           );
         } else if (e.instancePath === "/taxonomy/layers") {
           problems.push(
@@ -208,10 +208,10 @@ function checkConfig(data: Record<string, unknown>): string[] {
   if (Array.isArray(status) && status.every((s) => typeof s === "object" && s !== null)) {
     const seen = new Set<string>();
     for (const s of status) {
-      const state = (s as Record<string, unknown>).state;
-      if (typeof state === "string") {
-        if (seen.has(state)) problems.push(`config: duplicate status state '${state}'`);
-        seen.add(state);
+      const name = (s as Record<string, unknown>).name;
+      if (typeof name === "string") {
+        if (seen.has(name)) problems.push(`config: duplicate status name '${name}'`);
+        seen.add(name);
       }
     }
   }
@@ -278,9 +278,7 @@ function deriveConfig(data: Record<string, unknown>): Config {
   let states: string[] = [];
   if (Array.isArray(status)) {
     statusEnabled = true;
-    states = status.map((s) =>
-      typeof s === "string" ? s : String((s as Record<string, unknown>).state),
-    );
+    states = status.map((s) => String((s as Record<string, unknown>).name));
   }
   let layers = DEFAULT_LAYERS;
   let structure: Record<string, unknown> | null = null;
@@ -808,10 +806,19 @@ function doConfigSet(args: Record<string, string | string[]>, specDir: string): 
     if (vals.length === 1 && vals[0] === "false") {
       data.status = false;
     } else {
-      data.status = vals.map((v) => {
+      const entries: { name: string; description: string }[] = [];
+      for (const v of vals) {
         const i = v.indexOf(":");
-        return i === -1 ? v : { state: v.slice(0, i), description: v.slice(i + 1) };
-      });
+        const name = i === -1 ? "" : v.slice(0, i);
+        const description = i === -1 ? "" : v.slice(i + 1);
+        if (!name.trim() || !description.trim()) {
+          fail("config-invalid", { file: CONFIG_FILE }, [
+            `--status entry '${v}' must be '<name>:<description>' with a non-empty name and description`,
+          ]);
+        }
+        entries.push({ name, description });
+      }
+      data.status = entries;
     }
   }
   if (hasLayers || hasStructure) {

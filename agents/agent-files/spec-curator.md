@@ -47,7 +47,7 @@ If the spec configuration does not already specify a status setup, do not assume
 - **Manage spec state in source control** (a status on every spec): less overhead, agent-friendly, no external work-management system needed; the trade-off is more churn in git history as the project direction evolves.
 - **No spec state**: the user tracks the backlog in an external system and commits specs to source control only once they have been implemented; the trade-off is external overhead and a second source of truth.
 
-Write the chosen setup to the spec configuration with the spec-manager skill before writing any specs.
+Write the chosen setup to the spec configuration with the spec-manager skill before writing any specs; each state carries a short description of what it means, so other agents can tell which states count as open work.
 
 ## Refactoring a leaf
 

@@ -350,27 +350,27 @@ const cases: Case[] = [
      expectCode: 1,
      expectContains: ["reason=config-invalid"],
    },
-   {
-     name: "config set creates a config from scratch",
-     fix: null,
-     args: ["config", "set", "--status", "pending", "done", "--layers", "a", "b", "c", "--structure", "a: {b: [c, d]}"],
-     expectCode: 0,
-     expectContains: ["action=config-set", "path=spec/.config.yaml"],
-     expectFile: {
-       name: ".config.yaml",
-       contains: ["status:", "pending", "done", "layers:", "structure:", "- c", "- d"],
-     },
-   },
+    {
+      name: "config set creates a config from scratch",
+      fix: null,
+      args: ["config", "set", "--status", "pending:not started", "done:finished", "--layers", "a", "b", "c", "--structure", "a: {b: [c, d]}"],
+      expectCode: 0,
+      expectContains: ["action=config-set", "path=spec/.config.yaml"],
+      expectFile: {
+        name: ".config.yaml",
+        contains: ["status:", "name: pending", "name: done", "description: not started", "layers:", "structure:", "- c", "- d"],
+      },
+    },
    {
      name: "config set updates only the status and keeps the taxonomy",
      fix: "h-config",
-     args: ["config", "set", "--status", "wip:in progress", "done:finished"],
-     expectCode: 0,
-     expectContains: ["action=config-set"],
-     expectFile: {
-       name: ".config.yaml",
-       contains: ["state: wip", "description: in progress", "state: done", "structure:"],
-     },
+      args: ["config", "set", "--status", "wip:in progress", "done:finished"],
+      expectCode: 0,
+      expectContains: ["action=config-set"],
+      expectFile: {
+        name: ".config.yaml",
+        contains: ["name: wip", "description: in progress", "name: done", "structure:"],
+      },
    },
    {
      name: "config set disables status",
@@ -406,13 +406,20 @@ const cases: Case[] = [
      expectCode: 1,
      expectContains: ["reason=config-invalid"],
    },
-   {
-     name: "config set rejects an invalid state name",
-     fix: "h-config",
-     args: ["config", "set", "--status", "Pending"],
-     expectCode: 1,
-     expectContains: ["reason=config-invalid"],
-   },
+    {
+      name: "config set rejects an invalid state name",
+      fix: "h-config",
+      args: ["config", "set", "--status", "Pending:capitalized"],
+      expectCode: 1,
+      expectContains: ["reason=config-invalid"],
+    },
+    {
+      name: "config set rejects a status entry without a description",
+      fix: "h-config",
+      args: ["config", "set", "--status", "pending"],
+      expectCode: 1,
+      expectContains: ["reason=config-invalid"],
+    },
    {
      name: "config set rejects a non-mapping structure",
      fix: "h-config",

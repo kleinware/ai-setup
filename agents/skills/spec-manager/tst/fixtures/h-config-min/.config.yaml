@@ -1,4 +1,8 @@
-status: [pending, done]
+status:
+  - name: pending
+    description: not started
+  - name: done
+    description: finished
 taxonomy:
   layers: [a, b]
   structure:

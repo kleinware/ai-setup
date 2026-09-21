@@ -29,8 +29,10 @@ Never edit `spec/.config.yaml` directly — every change goes through the `confi
 
 ```yaml
 status:
-  - pending
-  - done
+  - name: pending
+    description: Not implemented yet.
+  - name: done
+    description: Implemented and verified.
 taxonomy:
   layers: [area, component, section]
   structure:
@@ -41,10 +43,9 @@ taxonomy:
 
 - `status` — one of:
   - `false` — no status is used. A spec that is in source control is valid and approved, and work management happens outside the repo.
-  - a non-empty list of state strings — every spec must carry `status` set to one of them.
-  - a non-empty list of `{state, description?}` objects — same, with an optional free-text description per state.
+  - a non-empty list of `{name, description}` objects — every spec must carry `status` set to one of the names, and each name has a free-text description of what it means.
   - Missing key or missing file — no status (default).
-  - State strings match `^[a-z0-9_]+$` and are unique.
+  - Names match `^[a-z0-9_]+$` and are unique.
 - `taxonomy` — optional:
   - `layers` — either a non-empty list of unique layer names matching `^[a-z0-9_]+$` (default `area`, `component`, `section` when the key is absent) or `false`.
   - `layers: false` — no layers are used: IDs are flat result terms with no hierarchy, `structure` must be omitted, and all specs live in the single `specs.spec.yaml`.
@@ -61,7 +62,7 @@ Every spec has exactly four fields, plus `status` when status is enabled; nothin
 - `description` — non-empty string
 - `motivation` — non-empty string (why do we want this?)
 - `acceptance_criteria` — non-empty string, or a non-empty list of strings (when is this met? observable conditions)
-- `status` — required when status is enabled, one of the configured states; forbidden when disabled
+- `status` — required when status is enabled, one of the configured status names; forbidden when disabled
 
 ## ID format
 
@@ -85,13 +86,13 @@ Run from anywhere in the repo; the script resolves the repo root itself. Any act
 
 ```bash
 bash <skill-dir>/spec.sh read --id <id>
-bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <state>]
+bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <name>]
 bash <skill-dir>/spec.sh find --query <keyword>
 bash <skill-dir>/spec.sh query config
-bash <skill-dir>/spec.sh query tasks [--status <state>] [--layer <path> ...]
+bash <skill-dir>/spec.sh query tasks [--status <name>] [--layer <path> ...]
 bash <skill-dir>/spec.sh validate
 bash <skill-dir>/spec.sh config get
-bash <skill-dir>/spec.sh config set [--status <state> ...] [--layers <layer> ...] [--structure <yaml>]
+bash <skill-dir>/spec.sh config set [--status <name>:<description> ...] [--layers <layer> ...] [--structure <yaml>]
 bash <skill-dir>/spec.sh config add --term <term> [--parent <path>]
 bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 ```
@@ -99,11 +100,11 @@ bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 - `read` — prints the full spec YAML for `--id`.
 - `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. The script validates the config, the schema (including `--status` when enabled), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. Reports `action=create` or `action=update`.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, and status (when enabled), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings.
-- `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of states, each a string or a `{state, description}` object), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
-- `query tasks` — lists the specs matching `--status <state>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings.
+- `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of `{name, description}` objects), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
+- `query tasks` — lists the specs matching `--status <name>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings.
 - `validate` — checks the config, that all spec IDs are unique, that every spec matches the schema, that status values are configured states, that IDs match the declared taxonomy, that every spec lives in its leaf file, and that every declared taxonomy term has at least one spec. Use it as a gate before committing spec or config changes.
 - `config get` — prints the contents of `spec/.config.yaml`, or `file=missing` when the file is absent.
-- `config set` — updates `spec/.config.yaml` (creating it when absent). Each flag present replaces that part; the other parts are preserved. `--status` takes one or more states, or a single `false` to disable status; a state may carry an optional description after `:` (for example `wip:in progress`). `--layers` takes one or more layer names, or a single `false` for no layers, which drops the structure. `--structure` takes a YAML mapping of the full taxonomy structure. The resulting config is validated and written atomically.
+- `config set` — updates `spec/.config.yaml` (creating it when absent). Each flag present replaces that part; the other parts are preserved. `--status` takes one or more `<name>:<description>` entries, or a single `false` to disable status; the first `:` separates the name from the description and both must be non-empty (for example `wip:in progress`). `--layers` takes one or more layer names, or a single `false` for no layers, which drops the structure. `--structure` takes a YAML mapping of the full taxonomy structure. The resulting config is validated and written atomically.
 - `config add` — adds a term to the taxonomy structure. `--parent` is the `/`-separated path to the list that receives the term (omit it for a single-layer taxonomy); `--parent` must point to a leaf list. Use `config set --structure` to create intermediate branches or change the layers.
 - `config remove` — removes a term from the taxonomy structure: a leaf term from a list (`--parent` to the list), or a whole branch from a mapping. Parents left empty are pruned; the removal fails if it would leave the structure empty.
 
@@ -142,7 +143,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
 
 ## First-run setup (when spec/.config.yaml is missing)
 
-1. Ask the user their status preference: no status, or which states they want.
+1. Ask the user their status preference: no status, or which states they want and a short description of each.
 2. Ask the user for the taxonomy: which layers — or none (`layers: false` for flat IDs) — and, when layers are declared, the structure.
 3. Run `config set` with the chosen `--status` and, when a taxonomy is declared, `--layers` and `--structure` (migrate those values from the existing `## Spec taxonomy` section in `AGENTS.md` if present).
 4. If a legacy `spec/SPECS.md` exists, move its specs into the per-leaf `*.spec.yaml` files (or `specs.spec.yaml` when layers is false), then delete `SPECS.md`.

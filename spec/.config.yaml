@@ -1,6 +1,8 @@
 status:
-  - pending
-  - done
+  - name: pending
+    description: The spec is not implemented yet.
+  - name: done
+    description: The spec is implemented and verified.
 taxonomy:
   layers:
     - area

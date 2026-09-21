@@ -37,8 +37,8 @@ specs:
     acceptance_criteria:
       - Every action validates the config against the skill's .config.schema.json and fails with
         config-invalid on violations.
-      - status is false, a list of state strings, or a list of {state, description?} objects; states
-        match ^[a-z0-9_]+$ and are unique.
+      - status is false or a non-empty list of {name, description} objects; names match ^[a-z0-9_]+$
+        and are unique.
       - taxonomy declares layers and a structure nested as deep as layers, or layers false to use no
         hierarchy, in which case structure is omitted and IDs are flat result terms.
       - A missing config or key defaults to no status and the area/component/section layers.
@@ -73,8 +73,8 @@ specs:
 
   - id: tooling_spec-manager_specs_partitioned-files
     description: Specs are partitioned into one YAML file per taxonomy leaf under spec/, named <layer
-      terms>.spec.yaml (for example interface_tui_results.spec.yaml); when layers is false, all specs
-      live in a single specs.spec.yaml.
+      terms>.spec.yaml (for example interface_tui_results.spec.yaml); when layers is false, all
+      specs live in a single specs.spec.yaml.
     motivation: One file per leaf keeps each group small and lets agents open just the file relevant to
       the spec they are working on.
     acceptance_criteria:
@@ -90,8 +90,8 @@ specs:
     motivation: Makes it easier for a human to find a spec's id and keeps the specs of one leaf grouped
       together in a single file.
     acceptance_criteria:
-      - After every write, the specs list in that leaf's .spec.yaml file is ordered alphabetically by
-        id.
+      - After every write, the specs list in that leaf's .spec.yaml file is ordered alphabetically
+        by id.
       - Specs sharing the same area, component, and section live in the same file.
     status: done
 
