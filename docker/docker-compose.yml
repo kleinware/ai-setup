@@ -35,26 +35,6 @@ services:
         target: /home/agent/.gitconfig
         read_only: true
 
-      - type: bind
-        source: ./container_opencode.json
-        target: /home/agent/.config/opencode/opencode.json
-        read_only: true
-
-      - type: bind
-        source: ../agents/skills
-        target: /home/agent/.config/opencode/skills
-        read_only: true
-
-      - type: bind
-        source: ../agents/agent-files
-        target: /home/agent/.config/opencode/agents
-        read_only: true
-
-      - type: bind
-        source: ./herdr_config.toml
-        target: /home/agent/.config/herdr/config.toml
-        read_only: true
-
     environment:
       HOME: /home/agent
       TERM: xterm-256color

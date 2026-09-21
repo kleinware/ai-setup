@@ -137,6 +137,17 @@ RUN printf '%s\n' \
     'fi' \
     'chown agent:agent /home/agent' \
     'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
+    'REPO=/workspace/main' \
+    'for path in docker/container_opencode.json docker/herdr_config.toml agents/skills agents/agent-files; do' \
+    '    [ -e "$REPO/$path" ] || { echo "missing $REPO/$path" >&2; exit 1; }' \
+    'done' \
+    'install -m 644 "$REPO/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
+    'install -m 644 "$REPO/docker/herdr_config.toml" /home/agent/.config/herdr/config.toml' \
+    'rsync -a --delete "$REPO/agents/skills/" /home/agent/.config/opencode/skills/' \
+    'rsync -a --delete "$REPO/agents/agent-files/" /home/agent/.config/opencode/agents/' \
+    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr' \
+    'date "+%Y-%m-%d %H:%M:%S" > /home/agent/.container_version.txt' \
+    'chown agent:agent /home/agent/.container_version.txt' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
     'if [ ! -f "$KEY" ]; then' \
     '    ssh-keygen -q -t ed25519 -N "" -f "$KEY"' \
