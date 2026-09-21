@@ -9,7 +9,8 @@ ssh-keygen -t ed25519 \
 # SSH Config
 
 `dev-repo up` assigns the host ports automatically and adds the entry to
-`~/.ssh/config` itself:
+`~/.ssh/config` itself. With `--no-add-ssh-config` it prints the entry
+instead of writing it:
 
 ```
 Host dev-my-project-2240

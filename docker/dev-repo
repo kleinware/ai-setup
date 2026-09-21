@@ -8,6 +8,7 @@ Usage: dev-repo <command> [args]
 Commands:
   up           Build and start the project container
   up --all     Recreate all running dev project containers
+  up --no-add-ssh-config   Print the ~/.ssh/config entry instead of writing it
   ls           List running dev project containers
   down         Tear down the project container and its volumes
 
@@ -111,6 +112,12 @@ container_ports() {
         | "\($ssh) \($web)"'
 }
 
+# Print the ~/.ssh/config entry for a host, with no trailing newline.
+ssh_config_block() {
+    printf 'Host %s\n    HostName 127.0.0.1\n    Port %s\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes' \
+        "$1" "$2" "${SSH_PUBLIC_KEY%.pub}"
+}
+
 # Add or update the host's entry in ~/.ssh/config. Sets SSH_CONFIG_ACTION to
 # 'Added' or 'Updated'.
 update_ssh_config() {
@@ -118,8 +125,7 @@ update_ssh_config() {
     local ssh_dir="$HOME/.ssh"
     local config_file="$ssh_dir/config"
     local block tmp
-    block="$(printf 'Host %s\n    HostName 127.0.0.1\n    Port %s\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes' \
-        "$host" "$port" "${SSH_PUBLIC_KEY%.pub}")"
+    block="$(ssh_config_block "$host" "$port")"
 
     mkdir -m 700 -p "$ssh_dir"
 
@@ -339,7 +345,12 @@ case "$COMMAND" in
         if [[ $# -eq 1 && "$1" == "--all" ]]; then
             up_all
         else
-            [[ $# -eq 0 ]] || usage
+            NO_ADD_SSH_CONFIG=0
+            if [[ $# -eq 1 && "$1" == "--no-add-ssh-config" ]]; then
+                NO_ADD_SSH_CONFIG=1
+            else
+                [[ $# -eq 0 ]] || usage
+            fi
 
             # Must be run from the git root, and that folder must be named 'main'.
             CWD="$(pwd -P)"
@@ -394,7 +405,14 @@ case "$COMMAND" in
 
             SSH_HOST="$PROJECT_NAME"
 
-            update_ssh_config "$SSH_HOST" "$SSH_PORT"
+            if (( NO_ADD_SSH_CONFIG )); then
+                echo "Add this entry to ~/.ssh/config:"
+                echo
+                ssh_config_block "$SSH_HOST" "$SSH_PORT"
+                echo
+            else
+                update_ssh_config "$SSH_HOST" "$SSH_PORT"
+            fi
 
             echo
             echo "Project '$PROJECT' is running."
@@ -402,7 +420,11 @@ case "$COMMAND" in
             echo "- ${UP_ACTION} container ${SSH_HOST}"
             echo "- SSH port ${SSH_PORT} -> container port 22"
             echo "- Web port ${WEB_PORT} -> container port 8080 (http://127.0.0.1:${WEB_PORT}/)"
-            echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
+            if (( NO_ADD_SSH_CONFIG )); then
+                echo "- Printed ~/.ssh/config entry for host ${SSH_HOST} (not written, --no-add-ssh-config)"
+            else
+                echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
+            fi
             register_herdr_machine "$SSH_HOST" "$PROJECT"
         fi
         ;;
