@@ -26,7 +26,7 @@ Host dev-my-project-2240
 # Config files
 
 At container start, the startup script copies `container_opencode.json`,
-`herdr_config.toml`, `agents/skills/`, `agents/agent-files/`, and `devtools/`
+`container_herdr_config.toml`, `agents/skills/`, `agents/agent-files/`, and `devtools/`
 from the image's baked-in setup files (`/opt/setup-src`, copied from the repo
 at build time) into the container: the config and agent files into the
 agent's config dirs, and `devtools/` into `/home/agent/bin`, so host-side

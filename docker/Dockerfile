@@ -110,7 +110,7 @@ RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
 # Bake the repo's setup files into the image so the start script can copy
 # them without bind-mounting them from the host repo.
 COPY docker/container_opencode.json /opt/setup-src/docker/container_opencode.json
-COPY docker/herdr_config.toml /opt/setup-src/docker/herdr_config.toml
+COPY docker/container_herdr_config.toml /opt/setup-src/docker/container_herdr_config.toml
 COPY agents/skills /opt/setup-src/agents/skills
 COPY agents/agent-files /opt/setup-src/agents/agent-files
 COPY devtools /opt/setup-src/devtools
@@ -148,11 +148,11 @@ RUN printf '%s\n' \
     'chown agent:agent /home/agent' \
     'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
     'SETUP=/opt/setup-src' \
-    'for path in docker/container_opencode.json docker/herdr_config.toml agents/skills agents/agent-files devtools; do' \
+    'for path in docker/container_opencode.json docker/container_herdr_config.toml agents/skills agents/agent-files devtools; do' \
     '    [ -e "$SETUP/$path" ] || { echo "missing $SETUP/$path" >&2; exit 1; }' \
     'done' \
     'install -m 644 "$SETUP/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
-    'install -m 644 "$SETUP/docker/herdr_config.toml" /home/agent/.config/herdr/config.toml' \
+    'install -m 644 "$SETUP/docker/container_herdr_config.toml" /home/agent/.config/herdr/config.toml' \
     'rsync -a --delete "$SETUP/agents/skills/" /home/agent/.config/opencode/skills/' \
     'rsync -a --delete "$SETUP/agents/agent-files/" /home/agent/.config/opencode/agents/' \
     'rsync -a --delete "$SETUP/devtools/" /home/agent/bin/' \
