@@ -78,6 +78,7 @@ RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
        "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" \
     && unzip -o bun.zip \
     && install -m 755 "bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun \
+    && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
     && rm -rf bun.zip "bun-linux-${BUN_ARCH}"
 
 # Dedicated development user (UID/GID are matched to the host at startup)
