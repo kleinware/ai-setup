@@ -96,7 +96,7 @@ specs:
     motivation: Every change to the spec store is traceable to a skill action and schema-validated, and
       the rest of the repo is left untouched.
     acceptance_criteria:
-      - Every change to a spec entry in a per-leaf spec/*.spec.md file goes through spec.sh write.
+      - Every change to a spec entry in a per-leaf spec/*.spec.yaml file goes through spec.sh write.
       - spec/.config.yaml is only changed through the skill's config actions, and every config
         change is followed by a passing spec.sh validate.
       - The curator makes zero file modifications outside spec/.

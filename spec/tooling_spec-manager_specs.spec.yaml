@@ -52,7 +52,7 @@ specs:
     acceptance_criteria:
       - read --id returns the full spec for a known id and fails with not-found otherwise.
       - write --id with all fields as CLI arguments validates the config, the spec schema, and the
-        taxonomy from spec/.config.yaml before creating or updating the leaf's .spec.md file,
+        taxonomy from spec/.config.yaml before creating or updating the leaf's .spec.yaml file,
         keeping that file sorted by id.
       - find --query prints matching specs as a YAML list of id and description across all leaf
         files.
@@ -73,14 +73,14 @@ specs:
 
   - id: tooling_spec-manager_specs_partitioned-files
     description: Specs are partitioned into one YAML file per taxonomy leaf under spec/, named <layer
-      terms>.spec.md (for example interface_tui_results.spec.md); when layers is false, all specs
-      live in a single specs.spec.md.
+      terms>.spec.yaml (for example interface_tui_results.spec.yaml); when layers is false, all specs
+      live in a single specs.spec.yaml.
     motivation: One file per leaf keeps each group small and lets agents open just the file relevant to
       the spec they are working on.
     acceptance_criteria:
       - With layers declared, a spec with id <layer1>_<layer2>_..._<layerN>_<result> lives in
-        <layer1>_<layer2>_..._<layerN>.spec.md.
-      - With taxonomy.layers set to false, all specs live in spec/specs.spec.md and IDs are flat
+        <layer1>_<layer2>_..._<layerN>.spec.yaml.
+      - With taxonomy.layers set to false, all specs live in spec/specs.spec.yaml and IDs are flat
         result terms.
       - A legacy spec/SPECS.md file is rejected with legacy-store.
     status: done
@@ -90,7 +90,7 @@ specs:
     motivation: Makes it easier for a human to find a spec's id and keeps the specs of one leaf grouped
       together in a single file.
     acceptance_criteria:
-      - After every write, the specs list in that leaf's .spec.md file is ordered alphabetically by
+      - After every write, the specs list in that leaf's .spec.yaml file is ordered alphabetically by
         id.
       - Specs sharing the same area, component, and section live in the same file.
     status: done
