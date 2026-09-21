@@ -27,13 +27,15 @@ Host dev-project-b
 # Config files
 
 At container start, the startup script copies `container_opencode.json`,
-`herdr_config.toml`, `agents/skills/`, and `agents/agent-files/` from the repo
-(mounted at `/workspace`) into the agent's config dirs, so host-side edits or
-moving the repo do not affect running containers. Recreate the container to
-refresh them. The gitconfig is still bind-mounted read-only to
-`/home/agent/.gitconfig`. The startup script also writes the container build
-timestamp to `/home/agent/.container_version.txt` (for example
-`2026-12-04 18:43:17`).
+`herdr_config.toml`, `agents/skills/`, `agents/agent-files/`, and `devtools/`
+from the repo (mounted at `/workspace`) into the container: the config and
+agent files into the agent's config dirs, and `devtools/` into
+`/home/agent/bin`, so host-side edits or moving the repo do not affect
+running containers. Recreate the container to refresh them. The gitconfig is
+still bind-mounted read-only to `/home/agent/.gitconfig`. The startup script
+also prepends `/home/agent/bin` to PATH in `/home/agent/.bashrc` (adding the
+line only once) and writes the container build timestamp to
+`/home/agent/.container_version.txt` (for example `2026-12-04 18:43:17`).
 
 # Web
 

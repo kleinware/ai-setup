@@ -1,4 +1,15 @@
 specs:
+  - id: isolation_container_setup_devtools-bin-path
+    description: The container startup script copies devtools/ from the repo into /home/agent/bin and
+      makes /home/agent/bin the first PATH entry in the agent's shell.
+    motivation: Developer workflow scripts such as new-worktree.sh must be runnable inside the
+      container, so the agent's shell finds them on PATH.
+    acceptance_criteria:
+      - At container start, the repo's devtools/ contents are in /home/agent/bin owned by agent, and
+        /home/agent/.bashrc prepends /home/agent/bin to PATH without duplicating the line on
+        restart.
+    status: done
+
   - id: isolation_container_setup_gitconfig-mounted
     description: The host ~/.gitconfig is bind-mounted read-only into the container as /home/agent/.gitconfig.
     motivation: The agent needs the host user's git identity and settings so that git operations inside

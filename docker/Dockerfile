@@ -87,7 +87,7 @@ RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
 RUN userdel -r ubuntu \
     && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace /home/agent/.config/opencode/agents /home/agent/.config/herdr \
+    && mkdir -p /workspace /home/agent/bin /home/agent/.config/opencode/agents /home/agent/.config/herdr \
     && chown -R agent:agent /home/agent/.config
 
 # Install Herdr using its official installer
@@ -139,14 +139,18 @@ RUN printf '%s\n' \
     'chown agent:agent /home/agent' \
     'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
     'REPO=/workspace/main' \
-    'for path in docker/container_opencode.json docker/herdr_config.toml agents/skills agents/agent-files; do' \
+    'for path in docker/container_opencode.json docker/herdr_config.toml agents/skills agents/agent-files devtools; do' \
     '    [ -e "$REPO/$path" ] || { echo "missing $REPO/$path" >&2; exit 1; }' \
     'done' \
     'install -m 644 "$REPO/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
     'install -m 644 "$REPO/docker/herdr_config.toml" /home/agent/.config/herdr/config.toml' \
     'rsync -a --delete "$REPO/agents/skills/" /home/agent/.config/opencode/skills/' \
     'rsync -a --delete "$REPO/agents/agent-files/" /home/agent/.config/opencode/agents/' \
-    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr' \
+    'rsync -a --delete "$REPO/devtools/" /home/agent/bin/' \
+    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/bin' \
+    'if ! grep -qF "export PATH=\"/home/agent/bin:\$PATH\"" /home/agent/.bashrc 2>/dev/null; then' \
+    '    echo "export PATH=\"/home/agent/bin:\$PATH\"" >> /home/agent/.bashrc' \
+    'fi' \
     'date "+%Y-%m-%d %H:%M:%S" > /home/agent/.container_version.txt' \
     'chown agent:agent /home/agent/.container_version.txt' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
