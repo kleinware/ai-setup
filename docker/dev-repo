@@ -341,7 +341,7 @@ case "$COMMAND" in
             fi
             SSH_PORT=$((10#$RANGE_START + 2))
             WEB_PORT=$((10#$RANGE_START + 8))
-            export SSH_PORT WEB_PORT
+            export SSH_PORT WEB_PORT PROJECT_DIR
 
             # Create the worktrees directory next to 'main' if it doesn't exist.
             mkdir -p "${PROJECT_DIR}/worktrees"
