@@ -22,6 +22,19 @@ specs:
       - up creates <project>/worktrees next to main if it does not already exist.
     status: done
 
+  - id: isolation_script_setup_down-confirms
+    description: The down command tears down the project's compose stack, including its volumes, after a
+      yes/no confirmation.
+    motivation: Tearing down a container loses the opencode session, the SSH host key, and container
+      files outside /workspace, so the user must explicitly confirm what will be destroyed.
+    acceptance_criteria:
+      - "down prints a warning naming the container that will be destroyed and listing what will be
+        lost: the opencode session information, the SSH host key, and files not under /workspace,
+        along with the host folder /workspace maps to."
+      - Without a yes answer, down tears nothing down.
+      - With a yes answer, down runs docker compose down with volume removal for the project.
+    status: done
+
   - id: isolation_script_setup_requires-ssh-key
     description: dev-repo up exits with an error if the SSH public key file does not exist.
     motivation: The container accepts only that public key, so starting a container without the key

@@ -9,6 +9,7 @@ Commands:
   up           Build and start the project container
   up --all     Recreate all running dev project containers
   ls           List running dev project containers
+  down         Tear down the project container and its volumes
 
 up must be run from the git root of a worktree whose folder is named 'main'.
 The project name is the name of the folder containing 'main'.
@@ -220,6 +221,78 @@ up_all() {
     done <<<"$rows"
 }
 
+# Tear down the project's compose stack (container and named volumes) after
+# a yes/no confirmation.
+down_project() {
+    local script_dir
+    script_dir="$(resolve_script_dir)"
+
+    # Must be run from the git root, and that folder must be named 'main'.
+    local CWD
+    CWD="$(pwd -P)"
+    if [[ "$(basename -- "$CWD")" != "main" ]]; then
+        echo "Must be run from a folder named 'main': $CWD" >&2
+        exit 1
+    fi
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "Must be run from a git worktree: $CWD" >&2
+        exit 1
+    fi
+    if [[ "$(git rev-parse --show-toplevel)" != "$CWD" ]]; then
+        echo "Must be run from the git root, not a subdirectory: $CWD" >&2
+        exit 1
+    fi
+
+    local PROJECT_DIR PROJECT
+    PROJECT_DIR="$(dirname -- "$CWD")"
+    PROJECT="$(basename -- "$PROJECT_DIR")"
+
+    if [[ ! "$PROJECT" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+        echo "Invalid project name: $PROJECT" >&2
+        exit 1
+    fi
+
+    local EXISTING
+    if ! EXISTING="$(existing_project "$PROJECT")"; then
+        echo "No container found for project '$PROJECT'."
+        return 0
+    fi
+    local PROJECT_NAME CID
+    read -r PROJECT_NAME CID <<<"$EXISTING"
+
+    local WORKSPACE_SOURCE
+    WORKSPACE_SOURCE="$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}' \
+        "$CID")"
+
+    echo
+    echo "This will destroy the container and its volumes:"
+    echo
+    echo "  Container: ${PROJECT_NAME} (${CID:0:12})"
+    echo "    - the opencode session information in the container"
+    echo "    - the SSH host key (connection fingerprint) for ${PROJECT_NAME}"
+    echo "    - all files in the container that are not under /workspace"
+    echo
+    if [[ -n "$WORKSPACE_SOURCE" ]]; then
+        echo "  /workspace maps to this folder on the host: ${WORKSPACE_SOURCE}"
+    fi
+    echo
+    printf 'Tear down %s? [y/N] ' "$PROJECT_NAME"
+    local answer
+    read -r answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        return 0
+    fi
+
+    docker compose \
+        -f "${script_dir}/docker-compose.yml" \
+        -p "$PROJECT_NAME" \
+        down -v --remove-orphans
+
+    echo "Tore down ${PROJECT_NAME} and its volumes."
+}
+
 [[ $# -ge 1 ]] || usage
 COMMAND="$1"
 shift
@@ -326,6 +399,10 @@ case "$COMMAND" in
                 printf '%-20s %5s  %s\n' "$proj" "$port" "$status"
             done <<<"$rows"
         fi
+        ;;
+
+    down)
+        down_project
         ;;
 
     *)

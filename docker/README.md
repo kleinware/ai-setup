@@ -39,6 +39,15 @@ Port 8080 inside the container is published on the host as the SSH port + 6
 (e.g. SSH port 2242 -> http://127.0.0.1:2248/), so agent-started web servers
 can be driven with a browser from the host.
 
+# Down
+
+`dev-repo down` tears down the project's container and its volumes after a
+yes/no confirmation. It first warns which container will be destroyed and
+what will be lost: the opencode session information in the container, the SSH
+host key (connection fingerprint) for the host, and any files in the container
+outside /workspace. Files under /workspace stay on the host in the project
+folder.
+
 # Herdr
 
 Nested herdr sessions are not allowed, so register each container with herdr on the host:
