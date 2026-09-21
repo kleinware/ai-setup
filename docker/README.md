@@ -54,7 +54,8 @@ folder.
 Nested herdr sessions are not allowed. `dev-repo up` registers the container
 with herdr on the host automatically when herdr is installed (skipping the
 add if the machine is already registered). When herdr is not installed, it
-prints the command to run:
+prints the command to run. With `--no-add-herdr-machine` it neither queries
+nor registers herdr and always prints the command to run:
 
 ```
 herdr machine add dev-project-a --label "project-a"

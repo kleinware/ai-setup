@@ -9,6 +9,7 @@ Commands:
   up           Build and start the project container
   up --all     Recreate all running dev project containers
   up --no-add-ssh-config   Print the ~/.ssh/config entry instead of writing it
+  up --no-add-herdr-machine   Print the herdr machine command instead of registering the machine
   ls           List running dev project containers
   down         Tear down the project container and its volumes
 
@@ -157,9 +158,17 @@ update_ssh_config() {
 }
 
 # Register the container as a herdr machine when herdr is installed, or
-# print the command to run. Prints its summary bullet lines.
+# print the command to run. Prints its summary bullet lines. Pass "1" as
+# the third argument to skip registration entirely and always print the
+# command.
 register_herdr_machine() {
-    local host="$1" label="$2"
+    local host="$1" label="$2" no_add="${3:-0}"
+
+    if [[ "$no_add" == "1" ]]; then
+        echo "- Register with herdr (nested herdr sessions are not allowed):"
+        echo "    herdr machine add ${host} --label \"${label}\""
+        return 0
+    fi
 
     if ! command -v herdr >/dev/null 2>&1; then
         echo "- Register with herdr (nested herdr sessions are not allowed):"
@@ -346,11 +355,14 @@ case "$COMMAND" in
             up_all
         else
             NO_ADD_SSH_CONFIG=0
-            if [[ $# -eq 1 && "$1" == "--no-add-ssh-config" ]]; then
-                NO_ADD_SSH_CONFIG=1
-            else
-                [[ $# -eq 0 ]] || usage
-            fi
+            NO_ADD_HERDR_MACHINE=0
+            for arg in "$@"; do
+                case "$arg" in
+                    --no-add-ssh-config) NO_ADD_SSH_CONFIG=1 ;;
+                    --no-add-herdr-machine) NO_ADD_HERDR_MACHINE=1 ;;
+                    *) usage ;;
+                esac
+            done
 
             # Must be run from the git root, and that folder must be named 'main'.
             CWD="$(pwd -P)"
@@ -425,7 +437,7 @@ case "$COMMAND" in
             else
                 echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
             fi
-            register_herdr_machine "$SSH_HOST" "$PROJECT"
+            register_herdr_machine "$SSH_HOST" "$PROJECT" "$NO_ADD_HERDR_MACHINE"
         fi
         ;;
 
