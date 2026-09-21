@@ -9,8 +9,10 @@ ssh-keygen -t ed25519 \
 # SSH Config
 
 `dev-repo up` assigns the host ports automatically and adds the entry to
-`~/.ssh/config` itself. With `--no-add-ssh-config` it prints the entry
-instead of writing it:
+`~/.ssh/config` itself. It also adds the container's host key to
+`~/.ssh/known_hosts`, so non-interactive ssh (herdr) connects without a
+host key prompt. With `--no-add-ssh-config` it prints the entry instead of
+writing it:
 
 ```
 Host dev-my-project-2240

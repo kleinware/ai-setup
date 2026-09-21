@@ -157,6 +157,44 @@ update_ssh_config() {
     fi
 }
 
+# Add the container's SSH host key to ~/.ssh/known_hosts so non-interactive
+# ssh (herdr) can connect without a host key prompt. Runs quietly when the
+# key is already trusted.
+trust_container_host_key() {
+    local port="$1"
+    local known_hosts="$HOME/.ssh/known_hosts"
+    local keys attempt
+
+    if [[ -f "$known_hosts" ]] && \
+        ssh-keygen -F "[127.0.0.1]:${port}" -f "$known_hosts" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # The container's sshd may not be listening yet, so retry a few times.
+    keys=""
+    for ((attempt = 1; attempt <= 5; attempt++)); do
+        keys="$(ssh-keyscan -p "$port" 127.0.0.1 2>/dev/null \
+            | grep -E "^\[127\.0\.0\.1\]:${port} " || true)"
+        if [[ -n "$keys" ]]; then
+            break
+        fi
+        if (( attempt < 5 )); then
+            sleep 1
+        fi
+    done
+
+    if [[ -z "$keys" ]]; then
+        echo "Warning: could not fetch the host key of [127.0.0.1]:${port};" \
+            " non-interactive ssh will prompt or fail." >&2
+        return 0
+    fi
+
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
+    printf '%s\n' "$keys" >> "$known_hosts"
+    echo "- Added host key of [127.0.0.1]:${port} to ~/.ssh/known_hosts"
+}
+
 # Register the container as a herdr machine when herdr is installed, or
 # print the command to run. Prints its summary bullet lines. Pass "1" as
 # the third argument to skip registration entirely and always print the
@@ -337,6 +375,19 @@ down_project() {
         return 0
     fi
 
+    # The compose file still interpolates these variables, so export the
+    # same values the 'up' path used before tearing down.
+    local RANGE_START
+    RANGE_START="${PROJECT_NAME##*-}"
+    export SSH_PORT=$((10#$RANGE_START + 2))
+    export WEB_PORT=$((10#$RANGE_START + 8))
+    export PROJECT_DIR
+    export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
+    export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
+    HOST_UID="$(id -u)"
+    HOST_GID="$(id -g)"
+    export HOST_UID HOST_GID
+
     docker compose \
         -f "${script_dir}/docker-compose.yml" \
         -p "$PROJECT_NAME" \
@@ -437,6 +488,7 @@ case "$COMMAND" in
             else
                 echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
             fi
+            trust_container_host_key "$SSH_PORT"
             register_herdr_machine "$SSH_HOST" "$PROJECT" "$NO_ADD_HERDR_MACHINE"
         fi
         ;;
