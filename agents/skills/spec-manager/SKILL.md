@@ -1,11 +1,11 @@
 ---
 name: spec-manager
-description: Creates, updates, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.md files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
+description: Creates, updates, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.yaml files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
 ---
 
 # Spec Manager Skill
 
-Canonical specs live in `spec/`, partitioned into one YAML file per taxonomy leaf: `spec/<layer terms>.spec.md` (for example `spec/interface_tui_results.spec.md`). When `taxonomy.layers` is `false` there is no hierarchy and all specs live in a single `spec/specs.spec.md`. Repo preferences for the skill live in `spec/.config.yaml`, validated against the JSON Schema in this skill's `.config.schema.json`.
+Canonical specs live in `spec/`, partitioned into one YAML file per taxonomy leaf: `spec/<layer terms>.spec.yaml` (for example `spec/interface_tui_results.spec.yaml`). When `taxonomy.layers` is `false` there is no hierarchy and all specs live in a single `spec/specs.spec.yaml`. Repo preferences for the skill live in `spec/.config.yaml`, validated against the JSON Schema in this skill's `.config.schema.json`.
 
 ```yaml
 specs:
@@ -21,7 +21,7 @@ Each leaf file holds a `specs:` list of the specs whose ids map to that leaf. En
 
 ## Using the CLI (do not parse specs yourself)
 
-Do not read, grep, or parse `spec/*.spec.md` or `spec/.config.yaml` with file or search tools. Every read, search, query, and change must go through the `spec.sh` CLI: use `query config` for the repo config (status, layers, taxonomy), `query tasks` to list specs by status and/or layer, `read` for a single spec, `find` for keyword search, and `validate` for store health. The CLI applies the same parsing and validation as the store, so its output is the single source of truth.
+Do not read, grep, or parse `spec/*.spec.yaml` or `spec/.config.yaml` with file or search tools. Every read, search, query, and change must go through the `spec.sh` CLI: use `query config` for the repo config (status, layers, taxonomy), `query tasks` to list specs by status and/or layer, `read` for a single spec, `find` for keyword search, and `validate` for store health. The CLI applies the same parsing and validation as the store, so its output is the single source of truth.
 
 ## Config: spec/.config.yaml
 
@@ -47,7 +47,7 @@ taxonomy:
   - State strings match `^[a-z0-9_]+$` and are unique.
 - `taxonomy` — optional:
   - `layers` — either a non-empty list of unique layer names matching `^[a-z0-9_]+$` (default `area`, `component`, `section` when the key is absent) or `false`.
-  - `layers: false` — no layers are used: IDs are flat result terms with no hierarchy, `structure` must be omitted, and all specs live in the single `specs.spec.md`.
+  - `layers: false` — no layers are used: IDs are flat result terms with no hierarchy, `structure` must be omitted, and all specs live in the single `specs.spec.yaml`.
   - `structure` — required when `layers` is a list: a nested mapping as deep as `layers` minus one: each level maps term names to the next level, and the final level is a list of term names. Term names match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
   - Missing key — no taxonomy; the membership check is skipped (`taxonomy=skipped`).
 
@@ -72,16 +72,16 @@ The agent composes the ID from the project's declared taxonomy in `spec/.config.
 
 ## Leaf files
 
-A spec's leaf file is named after the layer parts of its ID, with a `.spec.md` extension:
+A spec's leaf file is named after the layer parts of its ID, with a `.spec.yaml` extension:
 
-- ID `interface_tui_results_presented-info` → `spec/interface_tui_results.spec.md`
-- ID `presented-info` (no layers) → `spec/specs.spec.md`
+- ID `interface_tui_results_presented-info` → `spec/interface_tui_results.spec.yaml`
+- ID `presented-info` (no layers) → `spec/specs.spec.yaml`
 
 `write` creates or updates the leaf file for the given ID; `read` and `find` search across every leaf file in the spec directory. `validate` additionally checks that every spec lives in the file named after its leaf.
 
 ## Actions
 
-Run from anywhere in the repo; the script resolves the repo root itself. Any action may also take `--spec-dir <dir>` (in any position) to point at a different directory holding the `*.spec.md` files and `.config.yaml` — default is `<repo-root>/spec`.
+Run from anywhere in the repo; the script resolves the repo root itself. Any action may also take `--spec-dir <dir>` (in any position) to point at a different directory holding the `*.spec.yaml` files and `.config.yaml` — default is `<repo-root>/spec`.
 
 ```bash
 bash <skill-dir>/spec.sh read --id <id>
@@ -135,9 +135,9 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `term-exists` — `config add` of a term that is already declared
   - `validate-failed` — duplicate IDs, schema/status/taxonomy violations, a spec in the wrong leaf file, or declared taxonomy terms with no specs
   - `not-found` — read of an unknown id (`known=` lists existing ids)
-  - `spec-file-missing` — no `*.spec.md` files exist in the spec directory
-  - `legacy-store` — a legacy `spec/SPECS.md` file exists; specs are partitioned into `*.spec.md` files
-  - `malformed-store` — a `*.spec.md` file is not a `specs:` list of mappings
+  - `spec-file-missing` — no `*.spec.yaml` files exist in the spec directory
+  - `legacy-store` — a legacy `spec/SPECS.md` file exists; specs are partitioned into `*.spec.yaml` files
+  - `malformed-store` — a `*.spec.yaml` file is not a `specs:` list of mappings
   - `io-error` — file read/write failure
 
 ## First-run setup (when spec/.config.yaml is missing)
@@ -145,7 +145,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
 1. Ask the user their status preference: no status, or which states they want.
 2. Ask the user for the taxonomy: which layers — or none (`layers: false` for flat IDs) — and, when layers are declared, the structure.
 3. Run `config set` with the chosen `--status` and, when a taxonomy is declared, `--layers` and `--structure` (migrate those values from the existing `## Spec taxonomy` section in `AGENTS.md` if present).
-4. If a legacy `spec/SPECS.md` exists, move its specs into the per-leaf `*.spec.md` files (or `specs.spec.md` when layers is false), then delete `SPECS.md`.
+4. If a legacy `spec/SPECS.md` exists, move its specs into the per-leaf `*.spec.yaml` files (or `specs.spec.yaml` when layers is false), then delete `SPECS.md`.
 5. In `AGENTS.md`, remove the `## Spec taxonomy` section and add exactly this one line:
    `For spec structure and taxonomy, see spec/.config.yaml (managed by the spec-manager skill).`
 6. Run `validate` and fix any problems.
@@ -177,7 +177,7 @@ A leaf group is getting too big when its file holds more than about 10 specs, or
 
 ## Testing
 
-The skill ships with a CLI test suite. Each scenario under `tst/fixtures/<name>/` is a self-contained spec dir (per-leaf `*.spec.md` files plus an optional `.config.yaml`); `tst/spec.test.ts` runs the script against a copy of each fixture via `--spec-dir` and asserts on the exit code and output.
+The skill ships with a CLI test suite. Each scenario under `tst/fixtures/<name>/` is a self-contained spec dir (per-leaf `*.spec.yaml` files plus an optional `.config.yaml`); `tst/spec.test.ts` runs the script against a copy of each fixture via `--spec-dir` and asserts on the exit code and output.
 
 ```bash
 cd <skill-dir>

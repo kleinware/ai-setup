@@ -43,16 +43,16 @@ const cases: Case[] = [
     fix: "h-write-create",
     args: ["write", "--id", "a_b_d_two", "--description", "second spec", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "pending"],
     expectCode: 0,
-    expectContains: ["action=create", "a_b_d_two", "path=a_b_d.spec.md"],
+    expectContains: ["action=create", "a_b_d_two", "path=a_b_d.spec.yaml"],
   },
   {
     name: "write appends to a leaf file with a blank line between specs",
     fix: "h-write-append",
     args: ["write", "--id", "a_b_c_three", "--description", "third spec", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "pending"],
     expectCode: 0,
-    expectContains: ["action=create", "a_b_c_three", "path=a_b_c.spec.md"],
+    expectContains: ["action=create", "a_b_c_three", "path=a_b_c.spec.yaml"],
     expectFile: {
-      name: "a_b_c.spec.md",
+      name: "a_b_c.spec.yaml",
       contains: ["\n\n  - id: a_b_c_two", "\n\n  - id: a_b_c_three"],
     },
   },
@@ -61,7 +61,7 @@ const cases: Case[] = [
     fix: "h-write-update",
     args: ["write", "--id", "a_b_c_one", "--description", "first spec v2", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "done"],
     expectCode: 0,
-    expectContains: ["action=update", "a_b_c_one", "path=a_b_c.spec.md"],
+    expectContains: ["action=update", "a_b_c_one", "path=a_b_c.spec.yaml"],
   },
   {
     name: "find returns matches across leaf files",
@@ -96,7 +96,7 @@ const cases: Case[] = [
     fix: "h-layers-false",
     args: ["write", "--id", "flat-two", "--description", "second flat spec", "--motivation", "because", "--acceptance-criteria", "ok"],
     expectCode: 0,
-    expectContains: ["action=create", "flat-two", "path=specs.spec.md"],
+    expectContains: ["action=create", "flat-two", "path=specs.spec.yaml"],
   },
   {
     name: "write with layered id fails when layers false",
@@ -208,7 +208,7 @@ const cases: Case[] = [
     fix: "s-wrong-file",
     args: ["validate"],
     expectCode: 1,
-    expectContains: ["reason=validate-failed", "belongs in 'a_b_c.spec.md'"],
+    expectContains: ["reason=validate-failed", "belongs in 'a_b_c.spec.yaml'"],
   },
   {
     name: "validate fails on malformed store",

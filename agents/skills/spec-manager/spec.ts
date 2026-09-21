@@ -1,5 +1,5 @@
 // Manage spec entries stored as YAML in per-leaf files under spec/
-// (one <leaf>.spec.md file per taxonomy leaf; specs.spec.md when layers is false).
+// (one <leaf>.spec.yaml file per taxonomy leaf; specs.spec.yaml when layers is false).
 //
 // Usage:
 //   spec.sh [--spec-dir <dir>] <action> [flags]
@@ -15,7 +15,7 @@
 //              add --term <term> [--parent <path>]
 //              remove --term <term> [--parent <path>]
 //
-// --spec-dir <dir> overrides the directory holding the *.spec.md files and
+// --spec-dir <dir> overrides the directory holding the *.spec.yaml files and
 // .config.yaml (default: <repo-root>/spec). Useful for tests.
 //
 // Repo preferences live in spec/.config.yaml and are validated against
@@ -36,8 +36,8 @@ import { parse, stringify } from "yaml";
 
 const CONFIG_FILE = "spec/.config.yaml";
 const SCHEMA_FILE = ".config.schema.json";
-const STORE_GLOB = "*.spec.md";
-const FLAT_FILE = "specs.spec.md";
+const STORE_GLOB = "*.spec.yaml";
+const FLAT_FILE = "specs.spec.yaml";
 const TERM_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_LAYERS = ["area", "component", "section"];
 
@@ -66,7 +66,7 @@ Actions:
            remove --term <term> [--parent <path>]
 
 Flags:
-  --spec-dir <dir>  directory containing the *.spec.md files and .config.yaml (default: <repo-root>/spec)`;
+  --spec-dir <dir>  directory containing the *.spec.yaml files and .config.yaml (default: <repo-root>/spec)`;
 
 const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id"],
@@ -335,14 +335,14 @@ type Store = {
 
 function storeFileForId(id: string, cfg: Config): string {
   if (cfg.layers.length === 0) return FLAT_FILE;
-  return id.split("_").slice(0, cfg.layers.length).join("_") + ".spec.md";
+  return id.split("_").slice(0, cfg.layers.length).join("_") + ".spec.yaml";
 }
 
 function listStoreFiles(specDir: string): string[] {
   try {
     return fs
       .readdirSync(specDir)
-      .filter((f) => f.endsWith(".spec.md"))
+      .filter((f) => f.endsWith(".spec.yaml"))
       .sort();
   } catch (e) {
     fail("io-error", { file: "spec/" + STORE_GLOB, error: errLine(e) });
