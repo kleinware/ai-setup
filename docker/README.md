@@ -31,7 +31,9 @@ agent's config dirs, and `devtools/` into `/home/agent/bin`, so host-side
 edits or moving the repo do not affect running containers. Recreate the container to refresh them. The gitconfig is
 still bind-mounted read-only to `/home/agent/.gitconfig`. The startup script
 also prepends `/home/agent/bin` to PATH in `/home/agent/.bashrc` (adding the
-line only once) and writes the container build timestamp to
+line only once) and appends `cd /workspace/main` to `/home/agent/.bashrc`
+(adding the line only once), so interactive shells — including ssh sessions —
+start in `/workspace/main`. It also writes the container build timestamp to
 `/home/agent/.container_version.txt` (for example `2026-12-04 18:43:17`).
 
 # Web

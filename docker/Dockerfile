@@ -159,6 +159,9 @@ RUN printf '%s\n' \
     'if ! grep -qF "export PATH=\"/home/agent/bin:\$PATH\"" /home/agent/.bashrc 2>/dev/null; then' \
     '    echo "export PATH=\"/home/agent/bin:\$PATH\"" >> /home/agent/.bashrc' \
     'fi' \
+    'if ! grep -qF "cd /workspace/main" /home/agent/.bashrc 2>/dev/null; then' \
+    '    echo "cd /workspace/main" >> /home/agent/.bashrc' \
+    'fi' \
     'date "+%Y-%m-%d %H:%M:%S" > /home/agent/.container_version.txt' \
     'chown agent:agent /home/agent/.container_version.txt' \
     'KEY=/var/lib/herdr-ssh/ssh_host_ed25519_key' \
