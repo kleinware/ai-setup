@@ -9,12 +9,25 @@ specs:
     status: done
 
   - id: isolation_script_output_next-steps
-    description: On success, the up command prints the SSH config block for the project and the herdr
+    description: On success, the up command prints a bullet summary of what it did, including the herdr
       machine add command.
-    motivation: Users need the exact host alias and herdr registration to use the container; nested
-      herdr sessions are not allowed, so the host herdr must register the container.
+    motivation: Users need to know what the tool did and the exact herdr registration to use the
+      container; nested herdr sessions are not allowed, so the host herdr must register the
+      container.
     acceptance_criteria:
+      - The output is a bulleted list describing what the tool did.
       - The output includes herdr machine add dev-<project> --label "<project>".
+    status: done
+
+  - id: isolation_script_output_ssh-config
+    description: The up command adds or updates the host's entry in ~/.ssh/config itself instead of
+      printing it for the user to add.
+    motivation: The user should be able to ssh to the container immediately after up without editing
+      config by hand.
+    acceptance_criteria:
+      - After a successful up, ~/.ssh/config contains a Host <compose-project> block with the host's
+        port and IdentityFile.
+      - If an entry for the host already exists, it is updated in place with the current port.
     status: done
 
   - id: isolation_script_output_web-port

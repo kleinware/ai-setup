@@ -110,6 +110,45 @@ container_ports() {
         | "\($ssh) \($web)"'
 }
 
+# Add or update the host's entry in ~/.ssh/config. Sets SSH_CONFIG_ACTION to
+# 'Added' or 'Updated'.
+update_ssh_config() {
+    local host="$1" port="$2"
+    local ssh_dir="$HOME/.ssh"
+    local config_file="$ssh_dir/config"
+    local block tmp
+    block="$(printf 'Host %s\n    HostName 127.0.0.1\n    Port %s\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes' \
+        "$host" "$port" "${SSH_PUBLIC_KEY%.pub}")"
+
+    mkdir -m 700 -p "$ssh_dir"
+
+    if [[ -f "$config_file" ]] && grep -qxF "Host $host" "$config_file"; then
+        tmp="$(mktemp)"
+        block="$block" awk -v host="$host" '
+            BEGIN { skipping = 0; block = ENVIRON["block"] }
+            {
+                if (skipping) {
+                    if ($0 ~ /^Host /) { skipping = 0; print block; print "" }
+                    else next
+                }
+                if ($0 == "Host " host) { skipping = 1; next }
+                print
+            }
+            END { if (skipping) print block }
+        ' "$config_file" > "$tmp"
+        cat "$tmp" > "$config_file"
+        rm -f "$tmp"
+        SSH_CONFIG_ACTION="Updated"
+    else
+        if [[ -f "$config_file" ]] && [[ -s "$config_file" ]]; then
+            printf '\n%s\n' "$block" >> "$config_file"
+        else
+            printf '%s\n' "$block" >> "$config_file"
+        fi
+        SSH_CONFIG_ACTION="Added"
+    fi
+}
+
 # Pick the first free port range at or above 2200, in increments of 10.
 # Sets RANGE_START, SSH_PORT (range start + 2), and WEB_PORT (range start + 8).
 assign_port_range() {
@@ -221,9 +260,11 @@ case "$COMMAND" in
             if EXISTING="$(existing_project "$PROJECT")"; then
                 read -r PROJECT_NAME _ <<<"$EXISTING"
                 RANGE_START="${PROJECT_NAME##*-}"
+                UP_ACTION="Recreated"
             else
                 assign_port_range
                 PROJECT_NAME="dev-${PROJECT}-${RANGE_START}"
+                UP_ACTION="Started"
             fi
             SSH_PORT=$((10#$RANGE_START + 2))
             WEB_PORT=$((10#$RANGE_START + 8))
@@ -243,30 +284,17 @@ case "$COMMAND" in
 
             SSH_HOST="$PROJECT_NAME"
 
+            update_ssh_config "$SSH_HOST" "$SSH_PORT"
+
             echo
             echo "Project '$PROJECT' is running."
             echo
-            echo "Ports:"
-            echo "  SSH: 127.0.0.1:${SSH_PORT} -> 22"
-            echo "  Web: 127.0.0.1:${WEB_PORT} -> 8080"
-            echo
-            echo "Add the following to ~/.ssh/config:"
-            echo
-            cat <<EOF
-Host ${SSH_HOST}
-    HostName 127.0.0.1
-    Port ${SSH_PORT}
-    User agent
-    IdentityFile ${SSH_PUBLIC_KEY%.pub}
-    IdentitiesOnly yes
-EOF
-
-            echo
-            echo "Web servers inside the container (port 8080) are reachable at:"
-            echo "  http://127.0.0.1:${WEB_PORT}/"
-            echo
-            echo "Add the container to herdr (nested herdr sessions are not allowed):"
-            echo "  herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
+            echo "- ${UP_ACTION} container ${SSH_HOST}"
+            echo "- SSH port ${SSH_PORT} -> container port 22"
+            echo "- Web port ${WEB_PORT} -> container port 8080 (http://127.0.0.1:${WEB_PORT}/)"
+            echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
+            echo "- Register with herdr (nested herdr sessions are not allowed):"
+            echo "    herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
         fi
         ;;
 
