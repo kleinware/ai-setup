@@ -7,12 +7,102 @@ Usage: dev-repo <command> [args]
 
 Commands:
   up <ssh-port>  Build and start the project container
-  ls            List running dev project containers
+  up --all       Recreate all running dev project containers
+  ls             List running dev project containers
 
-Must be run from the git root of a worktree whose folder is named 'main'.
-The project name is the name of the folder containing 'main'.
+up <ssh-port> must be run from the git root of a worktree whose folder is
+named 'main'. The project name is the name of the folder containing 'main'.
 EOF
     exit 1
+}
+
+resolve_script_dir() {
+    # Resolve the script directory, following symlinks so this works when
+    # the script is invoked through a symlink (e.g. ~/bin/dev-repo ->
+    # docker/dev-repo).
+    local script_source="${BASH_SOURCE[0]}"
+    local script_link_dir
+    while [[ -L "$script_source" ]]; do
+        script_link_dir="$(cd -- "$(dirname -- "$script_source")" && pwd -P)"
+        script_source="$(readlink -- "$script_source")"
+        if [[ "$script_source" != /* ]]; then
+            script_source="$script_link_dir/$script_source"
+        fi
+    done
+    cd -- "$(dirname -- "$script_source")" && pwd -P
+}
+
+require_host_files() {
+    export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
+    export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
+    export HOST_UID="$(id -u)"
+    export HOST_GID="$(id -g)"
+
+    if [[ ! -f "$SSH_PUBLIC_KEY" ]]; then
+        echo "SSH public key not found: $SSH_PUBLIC_KEY" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$GITCONFIG" ]]; then
+        echo "gitconfig not found: $GITCONFIG" >&2
+        exit 1
+    fi
+}
+
+# Recreate every running dev- compose project (as listed by ls), using each
+# container's existing host SSH port and /workspace bind mount source.
+up_all() {
+    local script_dir
+    script_dir="$(resolve_script_dir)"
+
+    require_host_files
+
+    local containers
+    containers="$(docker ps --filter status=running --format '{{json .}}')"
+
+    local rows=""
+    if [[ -n "$containers" ]]; then
+        rows="$(jq -sr '
+            [ .[]
+              | (.Labels | split(",") |
+                  map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
+                  first) as $proj
+              | select($proj != null and ($proj | startswith("dev-")))
+              | (if (.Ports | length) > 0
+                 then (.Ports | split(",") | .[0] | capture(":(?<p>[0-9]+)->") | .p)
+                 else null
+                 end) as $port
+              | select($port != null)
+              | [ .ID, $proj, $port ]
+            ] | map(@tsv) | join("\n")' <<<"$containers")"
+    fi
+
+    if [[ -z "$rows" ]]; then
+        echo "No running dev project containers."
+        return 0
+    fi
+
+    local cid proj port source
+    while IFS=$'\t' read -r cid proj port; do
+        source="$(docker inspect --format \
+            '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}' \
+            "$cid")"
+        if [[ -z "$source" ]]; then
+            echo "Skipping $proj: no /workspace bind mount." >&2
+            continue
+        fi
+
+        export SSH_PORT="$port"
+        export WEB_PORT="$((10#$port + 1))"
+        export PROJECT_DIR="$source"
+
+        docker compose \
+            -f "${script_dir}/docker-compose.yml" \
+            -p "$proj" \
+            up -d --force-recreate
+
+        echo "Recreated $proj."
+    done <<<"$rows"
 }
 
 [[ $# -ge 1 ]] || usage
@@ -21,91 +111,68 @@ shift
 
 case "$COMMAND" in
     up)
-        [[ $# -eq 1 ]] || usage
+        if [[ $# -eq 1 && "$1" == "--all" ]]; then
+            up_all
+        else
+            [[ $# -eq 1 ]] || usage
 
-        SSH_PORT="$1"
+            SSH_PORT="$1"
 
-        # Must be run from the git root, and that folder must be named 'main'.
-        CWD="$(pwd -P)"
-        if [[ "$(basename -- "$CWD")" != "main" ]]; then
-            echo "Must be run from a folder named 'main': $CWD" >&2
-            exit 1
-        fi
-        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            echo "Must be run from a git worktree: $CWD" >&2
-            exit 1
-        fi
-        if [[ "$(git rev-parse --show-toplevel)" != "$CWD" ]]; then
-            echo "Must be run from the git root, not a subdirectory: $CWD" >&2
-            exit 1
-        fi
-
-        PROJECT_DIR="$(dirname -- "$CWD")"
-        PROJECT="$(basename -- "$PROJECT_DIR")"
-
-        # Validate the Compose project name.
-        if [[ ! "$PROJECT" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
-            echo "Invalid project name: $PROJECT" >&2
-            exit 1
-        fi
-
-        # Validate the host SSH port; the web port is SSH port + 1,
-        # so the SSH port must leave room for it.
-        if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] ||
-           (( 10#$SSH_PORT < 1024 || 10#$SSH_PORT > 65534 )); then
-            echo "SSH port must be between 1024 and 65534" >&2
-            exit 1
-        fi
-
-        WEB_PORT=$((SSH_PORT + 1))
-
-        # Create the worktrees directory next to 'main' if it doesn't exist.
-        mkdir -p "${PROJECT_DIR}/worktrees"
-
-        # Resolve paths relative to the script, not the current directory.
-        # Follow symlinks so this works when the script is invoked through
-        # a symlink (e.g. ~/bin/dev-repo -> docker/dev-repo).
-        SCRIPT_SOURCE="${BASH_SOURCE[0]}"
-        while [[ -L "$SCRIPT_SOURCE" ]]; do
-            SCRIPT_LINK_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd -P)"
-            SCRIPT_SOURCE="$(readlink -- "$SCRIPT_SOURCE")"
-            if [[ "$SCRIPT_SOURCE" != /* ]]; then
-                SCRIPT_SOURCE="$SCRIPT_LINK_DIR/$SCRIPT_SOURCE"
+            # Must be run from the git root, and that folder must be named 'main'.
+            CWD="$(pwd -P)"
+            if [[ "$(basename -- "$CWD")" != "main" ]]; then
+                echo "Must be run from a folder named 'main': $CWD" >&2
+                exit 1
             fi
-        done
-        SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_SOURCE")" && pwd -P)"
+            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                echo "Must be run from a git worktree: $CWD" >&2
+                exit 1
+            fi
+            if [[ "$(git rev-parse --show-toplevel)" != "$CWD" ]]; then
+                echo "Must be run from the git root, not a subdirectory: $CWD" >&2
+                exit 1
+            fi
 
-        export SSH_PORT
-        export WEB_PORT
-        export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
-        export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
-        export PROJECT_DIR
-        export HOST_UID="$(id -u)"
-        export HOST_GID="$(id -g)"
+            PROJECT_DIR="$(dirname -- "$CWD")"
+            PROJECT="$(basename -- "$PROJECT_DIR")"
 
-        if [[ ! -f "$SSH_PUBLIC_KEY" ]]; then
-            echo "SSH public key not found: $SSH_PUBLIC_KEY" >&2
-            exit 1
-        fi
+            # Validate the Compose project name.
+            if [[ ! "$PROJECT" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+                echo "Invalid project name: $PROJECT" >&2
+                exit 1
+            fi
 
-        if [[ ! -f "$GITCONFIG" ]]; then
-            echo "gitconfig not found: $GITCONFIG" >&2
-            exit 1
-        fi
+            # Validate the host SSH port; the web port is SSH port + 1,
+            # so the SSH port must leave room for it.
+            if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] ||
+               (( 10#$SSH_PORT < 1024 || 10#$SSH_PORT > 65534 )); then
+                echo "SSH port must be between 1024 and 65534" >&2
+                exit 1
+            fi
 
-        docker compose \
-            -f "${SCRIPT_DIR}/docker-compose.yml" \
-            -p "dev-${PROJECT}" \
-            up -d --build
+            WEB_PORT=$((SSH_PORT + 1))
+            export SSH_PORT WEB_PORT
 
-        SSH_HOST="dev-${PROJECT}"
+            # Create the worktrees directory next to 'main' if it doesn't exist.
+            mkdir -p "${PROJECT_DIR}/worktrees"
 
-        echo
-        echo "Project '$PROJECT' is running."
-        echo
-        echo "Add the following to ~/.ssh/config:"
-        echo
-        cat <<EOF
+            SCRIPT_DIR="$(resolve_script_dir)"
+
+            require_host_files
+
+            docker compose \
+                -f "${SCRIPT_DIR}/docker-compose.yml" \
+                -p "dev-${PROJECT}" \
+                up -d --build
+
+            SSH_HOST="dev-${PROJECT}"
+
+            echo
+            echo "Project '$PROJECT' is running."
+            echo
+            echo "Add the following to ~/.ssh/config:"
+            echo
+            cat <<EOF
 Host ${SSH_HOST}
     HostName 127.0.0.1
     Port ${SSH_PORT}
@@ -114,12 +181,13 @@ Host ${SSH_HOST}
     IdentitiesOnly yes
 EOF
 
-        echo
-        echo "Web servers inside the container (port 8080) are reachable at:"
-        echo "  http://127.0.0.1:${WEB_PORT}/"
-        echo
-        echo "Add the container to herdr (nested herdr sessions are not allowed):"
-        echo "  herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
+            echo
+            echo "Web servers inside the container (port 8080) are reachable at:"
+            echo "  http://127.0.0.1:${WEB_PORT}/"
+            echo
+            echo "Add the container to herdr (nested herdr sessions are not allowed):"
+            echo "  herdr machine add ${SSH_HOST} --label \"${PROJECT}\""
+        fi
         ;;
 
     ls)
@@ -131,7 +199,7 @@ EOF
                   | (.Labels | split(",") |
                       map(select(startswith("com.docker.compose.project=")) | split("=") | .[1]) |
                       first) as $proj
-                   | select($proj != null and ($proj | startswith("dev-")))
+                  | select($proj != null and ($proj | startswith("dev-")))
                   | (if (.Ports | length) > 0
                      then (.Ports | split(",") | .[0] | capture(":(?<p>[0-9]+)->") | .p)
                      else "-"

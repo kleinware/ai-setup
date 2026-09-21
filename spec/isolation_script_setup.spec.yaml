@@ -16,6 +16,15 @@ specs:
       - SSH_PUBLIC_KEY=/path/to/key.pub overrides the default key path.
     status: done
 
+  - id: isolation_script_setup_up-all-recreates
+    description: The up --all command recreates all running dev project containers.
+    motivation: Users want to refresh every running agent container at once, for example after changing
+      the Dockerfile or config files, without starting each project by hand.
+    acceptance_criteria:
+      - When no dev project containers are running, the command prints 'No running dev project
+        containers.'
+    status: done
+
   - id: isolation_script_setup_validates-args
     description: dev-repo up validates its argument and working directory before running docker compose.
     motivation: The compose project name is derived from the folder layout and must be a safe
