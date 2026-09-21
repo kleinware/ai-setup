@@ -56,6 +56,17 @@ folder.
 With `--force` it skips the confirmation and tears down unconditionally, so
 it can be used in scripts: `dev-repo down --force`.
 
+# UAT
+
+`devtools/dev-repo-uat.sh` runs an end-to-end test of the full container
+lifecycle on a throwaway project in `/tmp/dev-repo-test-<timestamp>/main`
+(empty git repo): `dev-repo up`, verify the container / herdr machine / ssh /
+opencode inference, `dev-repo up` again, verify the container version is
+newer, `dev-repo down --force`, and verify the container and its volumes are
+gone. It requires the model server (`models/serve.sh`) to be running and
+cleans up its host-side artifacts (herdr machine, ssh config entry,
+known_hosts entry, `/tmp` dir) on exit, success or failure.
+
 # Herdr
 
 Nested herdr sessions are not allowed. `dev-repo up` registers the container

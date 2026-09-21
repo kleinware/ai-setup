@@ -49,8 +49,9 @@ resolve_script_dir() {
 require_host_files() {
     export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
     export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
-    export HOST_UID="$(id -u)"
-    export HOST_GID="$(id -g)"
+    HOST_UID="$(id -u)"
+    HOST_GID="$(id -g)"
+    export HOST_UID HOST_GID
 
     if [[ ! -f "$SSH_PUBLIC_KEY" ]]; then
         echo "SSH public key not found: $SSH_PUBLIC_KEY" >&2
@@ -129,7 +130,8 @@ update_ssh_config() {
     local block tmp
     block="$(ssh_config_block "$host" "$port")"
 
-    mkdir -m 700 -p "$ssh_dir"
+    mkdir -p "$ssh_dir"
+    chmod 700 "$ssh_dir"
 
     if [[ -f "$config_file" ]] && grep -qxF "Host $host" "$config_file"; then
         tmp="$(mktemp)"
@@ -164,12 +166,7 @@ update_ssh_config() {
 trust_container_host_key() {
     local port="$1"
     local known_hosts="$HOME/.ssh/known_hosts"
-    local keys attempt
-
-    if [[ -f "$known_hosts" ]] && \
-        ssh-keygen -F "[127.0.0.1]:${port}" -f "$known_hosts" >/dev/null 2>&1; then
-        return 0
-    fi
+    local keys attempt existing new_key
 
     # The container's sshd may not be listening yet, so retry a few times.
     keys=""
@@ -190,10 +187,26 @@ trust_container_host_key() {
         return 0
     fi
 
-    mkdir -p "$HOME/.ssh"
-    chmod 700 "$HOME/.ssh"
-    printf '%s\n' "$keys" >> "$known_hosts"
-    echo "- Added host key of [127.0.0.1]:${port} to ~/.ssh/known_hosts"
+    # Replace a stale key for this host:port: an earlier container assigned
+    # the same port range leaves its key in known_hosts, and keeping it
+    # makes ssh fail with "REMOTE HOST IDENTIFICATION HAS CHANGED".
+    existing=""
+    if [[ -f "$known_hosts" ]]; then
+        existing="$(ssh-keygen -F "[127.0.0.1]:${port}" -f "$known_hosts" 2>/dev/null \
+            | awk '{print $3}' | head -n 1)" || existing=""
+    fi
+    new_key="$(awk '{print $3}' <<<"$keys" | head -n 1)"
+    if [[ -n "$existing" && "$existing" != "$new_key" ]]; then
+        ssh-keygen -R "[127.0.0.1]:${port}" >/dev/null 2>&1 || true
+        echo "- Replaced stale host key of [127.0.0.1]:${port} in ~/.ssh/known_hosts"
+    fi
+
+    if [[ -z "$existing" || "$existing" != "$new_key" ]]; then
+        mkdir -p "$HOME/.ssh"
+        chmod 700 "$HOME/.ssh"
+        printf '%s\n' "$keys" >> "$known_hosts"
+        echo "- Added host key of [127.0.0.1]:${port} to ~/.ssh/known_hosts"
+    fi
 }
 
 # Register the container as a herdr machine when herdr is installed, or
@@ -466,10 +479,13 @@ case "$COMMAND" in
 
             require_host_files
 
+            # --force-recreate: a plain "up" leaves a running container
+            # untouched, so the container (and its version file) would
+            # not actually get recreated.
             docker compose \
                 -f "${SCRIPT_DIR}/docker-compose.yml" \
                 -p "$PROJECT_NAME" \
-                up -d --build
+                up -d --build --force-recreate
 
             SSH_HOST="$PROJECT_NAME"
 
