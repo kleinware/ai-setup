@@ -1,0 +1,10 @@
+specs:
+  - id: build_testing_commit_clean
+    description: The build and test checks must complete with no errors or warnings before a commit is made.
+    motivation: Warnings and errors left in the repo's scripts and tooling accumulate into real defects,
+      so a clean check is a hard gate at commit time.
+    acceptance_criteria:
+      - shellcheck over every shell script in the repo reports zero warnings and zero errors.
+      - the repo test suite (bun test in agents/skills/spec-manager) reports zero failures.
+      - no commit is made unless both checks pass.
+    status: done

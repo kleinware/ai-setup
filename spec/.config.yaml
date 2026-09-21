@@ -10,6 +10,9 @@ taxonomy:
     agents:
       agent-files:
         - spec-curator
+    build:
+      testing:
+        - commit
     isolation:
       container:
         - access

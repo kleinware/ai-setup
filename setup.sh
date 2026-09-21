@@ -18,4 +18,4 @@ for src in .githooks/*; do
   chmod +x "$src"
 done
 
-echo "installed hooks: $(ls .githooks | tr '\n' ' ')"
+echo "installed hooks: $(find .githooks -maxdepth 1 -mindepth 1 -printf '%f ')"
