@@ -64,9 +64,9 @@ lifecycle on a throwaway project in `/tmp/dev-repo-test-<timestamp>/main`
 opencode inference, `dev-repo up` again with a stale host key seeded
 (verifying the key is replaced and the container version is newer),
 `dev-repo down --force`, and verify the container and its volumes are gone.
-It takes no arguments and is silent by default: on success it prints
-`all tests (N/N) pass`, and on failure it prints which test failed, its
-command, and its output. It requires the model server (`models/serve.sh`)
+It is silent by default; with `-v` it prints each test as it runs so a
+human can follow along. On success it prints `all tests (N/N) pass`, and on
+failure it prints which test failed, its command, and its output. It requires the model server (`models/serve.sh`)
 to be running and cleans up its host-side artifacts (herdr machine, ssh
 config entry, known_hosts entry, `/tmp` dir) on exit, success or failure.
 
