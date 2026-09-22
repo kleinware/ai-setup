@@ -4,8 +4,9 @@ specs:
     motivation: YAML is more token-efficient than JSON for agent-consumed output, matching the
       YAML-on-disk spec format.
     acceptance_criteria:
-      - find --query returns matching specs as a YAML list of id and description mappings.
-      - read --id returns the spec as YAML.
+      - find --query returns matching specs as a YAML list of id and description mappings, plus the
+        spec's meta field when it has one.
+      - read --id returns the spec as YAML, including its meta field when it has one.
     status: done
 
   - id: tooling_spec-manager_specs_agents-md-pointer
@@ -54,8 +55,8 @@ specs:
       - write --id with all fields as CLI arguments validates the config, the spec schema, and the
         taxonomy from spec/.config.yaml before creating or updating the leaf's .spec.yaml file,
         keeping that file sorted by id.
-      - find --query prints matching specs as a YAML list of id and description across all leaf
-        files.
+      - find --query prints matching specs as a YAML list of id and description, plus the spec's
+        meta field when it has one, across all leaf files.
     status: done
 
   - id: tooling_spec-manager_specs_leaf-refactor
@@ -69,6 +70,19 @@ specs:
       - After the user picks an option, the agent updates the taxonomy in spec/.config.yaml,
         rewrites each moved spec under its new id, removes emptied leaf files, and confirms with
         validate.
+    status: done
+
+  - id: tooling_spec-manager_specs_meta-field
+    description: A spec may carry an optional meta field holding arbitrary non-null YAML data, stored
+      after status at the bottom of the spec YAML.
+    motivation: Arbitrary attached data lets the store carry context that is not itself a verifiable
+      requirement, such as links or references, without extending the schema.
+    acceptance_criteria:
+      - write --id accepts an optional --meta holding any non-null YAML value, stored after status
+        in the spec YAML, and rejects a null or unparseable value.
+      - validate accepts arbitrary meta data and reports a spec with a null meta as a problem.
+      - find --query matches on a spec's meta content and prints it in the results when present.
+      - read --id and query tasks print the meta field whenever the spec is returned.
     status: done
 
   - id: tooling_spec-manager_specs_partitioned-files

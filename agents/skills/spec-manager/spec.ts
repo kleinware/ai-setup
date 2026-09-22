@@ -5,7 +5,7 @@
 //   spec.sh [--spec-dir <dir>] <action> [flags]
 //     read     --id <id>
 //     write    --id <id> --description <text> --motivation <text> \
-//         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>]
+//         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>] [--meta <yaml>]
 //     find     --query <string>
 //     query    config
 //              tasks [--status <name>] [--layer <path> ...]
@@ -54,8 +54,8 @@ const USAGE = `Usage:
   spec.sh [--spec-dir <dir>] <action> [flags]
 
 Actions:
-  read     --id <id>
-   write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>]
+   read     --id <id>
+    write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>] [--meta <yaml>]
    find     --query <string>
    query    config
             tasks [--status <name>] [--layer <path> ...]
@@ -70,7 +70,7 @@ Flags:
 
 const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id"],
-  write: ["id", "description", "motivation", "acceptance-criteria", "status"],
+  write: ["id", "description", "motivation", "acceptance-criteria", "status", "meta"],
   find: ["query"],
   query: ["status", "layer"],
   validate: [],
@@ -445,13 +445,16 @@ function specText(spec: Record<string, unknown>): string {
   const ac = spec.acceptance_criteria;
   if (Array.isArray(ac)) parts.push(...ac.map((x) => String(x)));
   else parts.push(String(ac ?? ""));
+  if (spec.meta !== null && spec.meta !== undefined) {
+    parts.push(stringify(spec.meta, { lineWidth: 100 }));
+  }
   return parts.join("\n");
 }
 
 function specProblems(spec: Record<string, unknown>, cfg: Config): string[] {
   const problems: string[] = [];
   const id = String(spec.id);
-  const allowed = new Set<string>(["id", "description", "motivation", "acceptance_criteria"]);
+  const allowed = new Set<string>(["id", "description", "motivation", "acceptance_criteria", "meta"]);
   if (cfg.statusEnabled) allowed.add("status");
   for (const key of Object.keys(spec)) {
     if (!allowed.has(key)) problems.push(`${id}: unknown field '${key}'`);
@@ -477,6 +480,9 @@ function specProblems(spec: Record<string, unknown>, cfg: Config): string[] {
     }
   } else if ("status" in spec) {
     problems.push(`${id}: status is not allowed because status is disabled in ${CONFIG_FILE}`);
+  }
+  if ("meta" in spec && spec.meta === null) {
+    problems.push(`${id}: meta must not be null`);
   }
   if (!idRegex(cfg.layers).test(id)) {
     problems.push(`${id}: id does not match ${idPattern(cfg.layers)}`);
@@ -592,6 +598,17 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
     statusProblems.push(`--status is not allowed because status is disabled in ${CONFIG_FILE}`);
   }
   if (statusProblems.length) fail("status-invalid", { id }, statusProblems);
+  let meta: unknown;
+  if (args.meta !== undefined) {
+    try {
+      meta = parse(args.meta as string);
+    } catch (e) {
+      fail("yaml-error", { id, file: "meta", error: errLine(e) });
+    }
+    if (meta === null) {
+      fail("schema-invalid", { id }, ["--meta must be a non-null YAML value"]);
+    }
+  }
   const spec: Record<string, unknown> = {
     id,
     description,
@@ -599,6 +616,7 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
     acceptance_criteria: [...criteria],
   };
   if (status !== null) spec.status = status;
+  if (args.meta !== undefined) spec.meta = meta;
   if (cfg.structure) {
     const tp = taxonomyProblem(id, cfg);
     if (tp) fail("taxonomy-unknown", { id }, [tp]);
@@ -639,7 +657,11 @@ function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: 
   const specs = Object.values(store.files).flat();
   const matches = specs
     .filter((s) => specText(s).toLowerCase().includes(query.toLowerCase()))
-    .map((s) => ({ id: s.id, description: s.description }));
+    .map((s) => {
+      const m: Record<string, unknown> = { id: s.id, description: s.description };
+      if (s.meta !== null && s.meta !== undefined) m.meta = s.meta;
+      return m;
+    });
   console.log(`status=success action=find query=${kv(query)} count=${matches.length}`);
   console.log("");
   console.log(stringify(matches, { lineWidth: 100 }));
@@ -736,6 +758,7 @@ function doQueryTasks(args: Record<string, string | string[]>, specDir: string, 
   const results = matches.map((s) => {
     const m: Record<string, unknown> = { id: s.id, description: s.description };
     if (cfg.statusEnabled) m.status = s.status;
+    if (s.meta !== null && s.meta !== undefined) m.meta = s.meta;
     return m;
   });
   const line =
