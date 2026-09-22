@@ -31,7 +31,7 @@ If your prompt instructs you to verify rather than implement, change nothing and
 1. Implement the assigned spec IDs, exactly.
 2. Automated tests, created via your subagents, that verify behavior according to the specs. End-to-end / full-integration tests are the highest form of verification and are the primary requirement: exercise the service exactly the way a user would use it (a website: Playwright driving headless chromium; a TUI: driven interactively like a user), with lower-level regression tests where appropriate. Every test must be labeled with the spec ID it verifies. Keep ALL prior tests green: update selectors or assertions only where behavior genuinely changed; never delete a test.
 3. Verification: the full test suite is green (including all prior phases' tests), typecheck is clean, and the build succeeds.
-4. Commit: only when ALL tests pass and typecheck is clean. Stage intended files only (never secrets; ignore dependencies and build artifacts). Conventional commit message; hooks/commitlint enforced, no `--no-verify`. Then report back.
+4. Commit: only when ALL tests pass and typecheck is clean. Stage intended files only (never secrets; ignore dependencies and build artifacts). When status is disabled, the commit must also include the spec files for the specs implemented in this phase — committing those spec files is what marks the specs as implemented, so they go in the same commit as the feature code. Conventional commit message; hooks/commitlint enforced, no `--no-verify`. Then report back.
 
 ## Orchestration guidance
 
