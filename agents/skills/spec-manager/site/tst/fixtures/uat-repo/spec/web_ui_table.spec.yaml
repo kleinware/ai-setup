@@ -1,0 +1,7 @@
+specs:
+  - id: web_ui_table_grid-resize
+    description: Table columns can be resized by dragging their dividers.
+    motivation: Dense data needs adjustable column widths.
+    acceptance_criteria:
+      - Dragging a divider changes the column width.
+    status: pending

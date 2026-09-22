@@ -1,0 +1,15 @@
+specs:
+  - id: web_ui_list_rows-paginated
+    description: The list shows one page of rows at a time with a pager.
+    motivation: Large lists must stay readable, so rows are paginated.
+    acceptance_criteria:
+      - The pager controls which page of rows is shown.
+      - Page navigation updates the visible rows without reloading the page.
+    status: pending
+
+  - id: web_ui_list_rows-sorted
+    description: List rows render in stable, deterministic order.
+    motivation: Users compare rows across reloads, so order must not jump.
+    acceptance_criteria:
+      - Rows keep the same relative order on every render.
+    status: done

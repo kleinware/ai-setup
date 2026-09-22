@@ -1,0 +1,14 @@
+specs:
+  - id: tools_cli_run_flags-parsed
+    description: The run subcommand parses flags in single- and double-dash form.
+    motivation: Users type flags both ways, so both must work.
+    acceptance_criteria:
+      - Single-dash and double-dash flags parse to the same values.
+    status: pending
+
+  - id: tools_cli_run_output-stream
+    description: Run output streams to stdout as it is produced.
+    motivation: Long-running commands need live progress feedback.
+    acceptance_criteria:
+      - Output appears on stdout before the command finishes.
+    status: done
