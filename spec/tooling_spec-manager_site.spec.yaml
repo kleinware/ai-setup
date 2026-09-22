@@ -1,0 +1,130 @@
+specs:
+  - id: tooling_spec-manager_site_filters
+    description: A filter bar along the top of the page can filter by taxonomy value, by status, and by
+      free text matched against a spec's id, description, motivation, or any acceptance criterion.
+    motivation: The user reviews specs in batches - by area of the store, by state, or by topic -
+      instead of scrolling the whole list.
+    acceptance_criteria:
+      - Filtering by status leaves only specs carrying that status.
+      - Filtering by taxonomy value leaves only specs within that taxonomy branch.
+      - A text query leaves only specs whose id, description, motivation, or any acceptance
+        criterion contains the query text; matching is case-insensitive.
+      - Multiple active filters apply together, and clearing a filter restores the full list.
+    status: pending
+
+  - id: tooling_spec-manager_site_follow-up-file
+    description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
+      an id (required, matching the spec id), an optional description string, an optional motivation
+      string, and an optional acceptance_criteria object with numeric index keys and string values;
+      items are sorted by spec id."
+    motivation: A stable, predictable file format lets the spec curator agent read the user's feedback
+      and discuss it without parsing ad-hoc structure.
+    acceptance_criteria:
+      - The file's top-level key is items:, a list of objects, and each object's id matches an
+        existing spec id.
+      - Only id is required; description and motivation are optional strings, and
+        acceptance_criteria is an optional object mapping numeric index keys to string values.
+      - The items list is sorted by spec id.
+    status: pending
+
+  - id: tooling_spec-manager_site_follow-up-notes
+    description: Below each spec's description, motivation, and each acceptance criterion, a shadcn
+      textarea collects questions, concerns, and instructions for the spec curator agent; typed text
+      auto-saves to spec/spec_follow_up.yaml on blur, on Enter, or after 5 seconds of inactivity,
+      with a yellow pending indicator while typing that turns into a green checkmark once saved.
+    motivation: The notes capture the user's feedback for a later discussion with the spec curator
+      agent, and auto-save records the feedback without any explicit save action.
+    acceptance_criteria:
+      - While the user is typing, a yellow pending indicator is shown to the right of the textarea.
+      - When the textarea loses focus, Enter is pressed, or 5 seconds of inactivity pass, the text
+        is saved to spec/spec_follow_up.yaml and the indicator becomes a green checkmark.
+      - If the user clears a textarea and the save fires, the corresponding field is removed from
+        that item in spec/spec_follow_up.yaml, leaving an id-only item when every field is empty.
+    status: pending
+
+  - id: tooling_spec-manager_site_grouped-view
+    description: The page displays all specs sorted by id and grouped by their taxonomy, and each named
+      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it.
+    motivation: The taxonomy gives the user a navigable outline of the store, and collapsing keeps the
+      view manageable as the store grows.
+    acceptance_criteria:
+      - Spec ids are listed in ascending order by id.
+      - Specs are grouped under their taxonomy path (area, component, section).
+      - Collapsing a layer hides all spec ids under it, and expanding restores them.
+    status: pending
+
+  - id: tooling_spec-manager_site_launch
+    description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
+      and editor site on 127.0.0.1 port 8080, and must be run from a project root where spec/
+      exists.
+    motivation: One command opens the repo's specs in a browser with no manual dev-server setup, and
+      binding to loopback keeps the tool local-only.
+    acceptance_criteria:
+      - Running bash agents/skills/spec-manager/spec-manage-site.sh from a repo root with a spec/
+        folder starts a server, and GET http://127.0.0.1:8080/ returns the site with HTTP 200.
+      - The server binds to 127.0.0.1 on port 8080, not to a network interface.
+      - Running the script from a directory without a spec/ folder exits non-zero with an error
+        message.
+    status: pending
+
+  - id: tooling_spec-manager_site_live-data
+    description: The site reads its data from the spec/ folder of the repo it was launched from (the
+      leaf spec files, spec/.config.yaml, and spec/spec_follow_up.yaml) and watches the filesystem,
+      pushing changes to the open page.
+    motivation: The on-disk spec store is the source of truth, so the page must show the current state
+      even while agents edit files behind it.
+    acceptance_criteria:
+      - On load, the page shows every spec from the spec/ leaf files, with follow-up notes from
+        spec/spec_follow_up.yaml where present.
+      - Editing a spec file or spec/spec_follow_up.yaml on disk while the page is open updates the
+        displayed data within a few seconds without a manual page reload.
+    status: pending
+
+  - id: tooling_spec-manager_site_stack
+    description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
+      serves the app and its API routes, and the look is the shadcn preset b6ok544un2."
+    motivation: Next.js gives one TypeScript codebase for UI and server-side data handling, bun is the
+      runtime, and the shadcn preset fixes the component set and visual theme up front.
+    acceptance_criteria:
+      - The site is a Next.js application whose dev server is run with bun.
+      - The UI is TypeScript React with the shadcn preset b6ok544un2 applied, either via bunx --bun
+        shadcn@latest init --preset b6ok544un2 --template next or a standard Next.js template
+        followed by bunx --bun shadcn@latest apply --preset b6ok544un2.
+      - The site's app code lives inside the spec-manager skill directory, next to
+        spec-manage-site.sh.
+    status: pending
+
+  - id: tooling_spec-manager_site_status-edit
+    description: Each spec is shown in its own shadcn item with its id, a status radio group, its
+      description, its motivation, and its list of acceptance criteria; changing the radio value
+      updates that spec's status in its spec.yaml file.
+    motivation: Status is the only field written back to the canonical store, so the user can mark a
+      spec approved from the page and the spec store stays the single source of truth.
+    acceptance_criteria:
+      - The status radio group offers one option per status configured in spec/.config.yaml.
+      - Selecting a status in the UI writes the new status into that spec's leaf spec.yaml file on
+        disk.
+      - After the change, both the on-disk file and the UI show the new status.
+    status: pending
+
+  - id: tooling_spec-manager_site_uat
+    description: "The site ships automated user acceptance tests (UAT) that run against a test repo: the
+      tests start the site, drive it like a user (change a spec's status, type follow-up text into a
+      few fields across a few spec ids, and save), and verify the changes landed on disk."
+    motivation: The UAT exercises the site end-to-end the way a real reviewer would, and proves edits
+      reach the files on disk - the whole point of the tool - while a throwaway test repo keeps the
+      tests from mutating the real spec store.
+    acceptance_criteria:
+      - "The UAT runs against a test repo: a fixture spec/ store checked in with the site's tests,
+        copied into a scratch directory per run, and separate from the repo's real spec store."
+      - The UAT starts spec-manage-site.sh against the test repo and loads the site in a headless
+        browser.
+      - The UAT changes a spec's status through the status radio in the UI and asserts the
+        corresponding spec.yaml file in the test repo on disk carries the new status.
+      - The UAT types follow-up text into fields of at least two spec ids, covering multiple field
+        types (description, motivation, and acceptance criterion), triggers the save, and asserts
+        spec_follow_up.yaml in the test repo contains an item per touched spec id with the typed
+        text and items sorted by id.
+      - The UAT is fully automated - no manual steps - and runs as part of the site's automated test
+        suite.
+    status: pending
