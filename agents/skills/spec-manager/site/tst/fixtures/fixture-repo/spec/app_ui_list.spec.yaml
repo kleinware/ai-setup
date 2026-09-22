@@ -1,0 +1,15 @@
+specs:
+  - id: app_ui_list_items-paginated
+    description: The list shows one page of items at a time with a pager.
+    motivation: Large lists must stay readable, so items are paginated.
+    acceptance_criteria:
+      - The pager controls which page of items is shown.
+      - Page navigation updates the visible items without reloading the page.
+    status: pending
+
+  - id: app_ui_list_items-sorted
+    description: List items render in stable, deterministic order.
+    motivation: Users compare rows across reloads, so ordering must not jump.
+    acceptance_criteria:
+      - Items keep the same relative order on every render.
+    status: done

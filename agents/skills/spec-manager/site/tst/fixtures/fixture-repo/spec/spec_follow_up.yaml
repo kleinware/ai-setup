@@ -1,0 +1,11 @@
+items:
+  - id: app_ui_list_items-paginated
+    description: The pager must keep the active page across data refreshes.
+    motivation: Live updates must not lose the user's place in the list.
+    acceptance_criteria:
+      1: The active page index is preserved when new data arrives.
+      2: The pager highlights the active page number.
+  - id: tools_cli_run_flags-parsed
+    description: Flag parsing must reject unknown flags with a usage hint.
+    acceptance_criteria:
+      1: Unknown flags exit non-zero and print a usage message.

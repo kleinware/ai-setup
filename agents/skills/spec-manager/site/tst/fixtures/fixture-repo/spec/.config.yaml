@@ -1,0 +1,18 @@
+status:
+  - name: pending
+    description: Not implemented yet.
+  - name: done
+    description: Implemented and verified.
+taxonomy:
+  layers:
+    - area
+    - component
+    - section
+  structure:
+    app:
+      ui:
+        - list
+        - table
+    tools:
+      cli:
+        - run

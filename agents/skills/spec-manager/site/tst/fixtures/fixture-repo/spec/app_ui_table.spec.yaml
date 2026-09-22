@@ -1,0 +1,8 @@
+specs:
+  - id: app_ui_table_columns-resize
+    description: Table columns can be resized by dragging their dividers.
+    motivation: Dense data needs adjustable column widths.
+    acceptance_criteria:
+      - Dragging a divider changes the column width.
+      - The resized width persists within the session.
+    status: pending
