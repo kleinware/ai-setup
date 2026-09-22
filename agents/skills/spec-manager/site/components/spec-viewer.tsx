@@ -1,30 +1,38 @@
 "use client";
 
 // Spec viewer/editor site: renders every spec from the store, grouped by
-// taxonomy, with live updates pushed over /api/events.
+// taxonomy, with live updates pushed over /api/events, status editing via
+// the /api/specs/status endpoint, and auto-saved follow-up notes via the
+// /api/follow-ups endpoint.
 
-import { useEffect, useMemo, useState } from "react";
-import { RiArrowDownSLine } from "@remixicon/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemHeader,
+  ItemTitle,
+} from "@/components/ui/item";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "cn";
 import type {
   FollowUpItem,
   SpecEntry,
   StoreData,
 } from "@/lib/spec-types";
+
+type StatusOption = { name: string; description: string };
 
 type GroupNode = {
   term: string;
@@ -61,64 +69,338 @@ function criteriaList(criteria: string | string[]): string[] {
   return Array.isArray(criteria) ? criteria : [criteria];
 }
 
-function SpecRow({ spec, note }: { spec: SpecEntry; note?: FollowUpItem }) {
+type NoteField = "description" | "motivation" | "criterion";
+
+type FieldDef = {
+  field: NoteField;
+  index?: number;
+  key: string;
+  server: string;
+};
+
+type FieldState = { draft: string; saved: string };
+
+type IndicatorState = "pending" | "saved" | "idle";
+
+function NoteIndicator({
+  testId,
+  state,
+}: {
+  testId: string;
+  state: IndicatorState;
+}) {
   return (
-    <Card data-testid={`spec-row-${spec.id}`} className="py-4">
-      <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle data-testid={`spec-id-${spec.id}`} className="font-mono text-base">
-            {spec.id}
-          </CardTitle>
-          {spec.status ? (
+    <span
+      data-testid={testId}
+      data-state={state}
+      className={cn(
+        "mt-1.5 flex shrink-0 items-center",
+        state === "pending" && "size-2 rounded-full bg-yellow-400",
+        state === "saved" && "text-green-600",
+      )}
+    >
+      {state === "saved" ? <RiCheckLine /> : null}
+    </span>
+  );
+}
+
+function SpecRow({
+  spec,
+  note,
+  statuses,
+}: {
+  spec: SpecEntry;
+  note?: FollowUpItem;
+  statuses: StatusOption[];
+}) {
+  const fieldDefs = useMemo<FieldDef[]>(() => {
+    const defs: FieldDef[] = [
+      {
+        field: "description",
+        key: "description",
+        server: note?.description ?? "",
+      },
+      {
+        field: "motivation",
+        key: "motivation",
+        server: note?.motivation ?? "",
+      },
+    ];
+    criteriaList(spec.acceptance_criteria).forEach((_, i) => {
+      defs.push({
+        field: "criterion",
+        index: i,
+        key: `criterion-${i}`,
+        server: note?.acceptance_criteria?.[String(i)] ?? "",
+      });
+    });
+    return defs;
+  }, [spec.acceptance_criteria, note]);
+
+  const [fields, setFields] = useState<Record<string, FieldState>>(() => {
+    const init: Record<string, FieldState> = {};
+    for (const def of fieldDefs) {
+      init[def.key] = { draft: def.server, saved: def.server };
+    }
+    return init;
+  });
+  const fieldsRef = useRef(fields);
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
+
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // On every store update (initial fetch and SSE refetch), adopt server
+  // values for fields the user is not currently typing in; leave typing
+  // fields (draft !== saved) untouched.
+  useEffect(() => {
+    setFields((prev) => {
+      const next: Record<string, FieldState> = {};
+      for (const def of fieldDefs) {
+        const cur = prev[def.key];
+        if (cur && cur.draft !== cur.saved) {
+          next[def.key] = cur;
+        } else {
+          next[def.key] = { draft: def.server, saved: def.server };
+          const t = timers.current[def.key];
+          if (t) {
+            clearTimeout(t);
+            delete timers.current[def.key];
+          }
+        }
+      }
+      return next;
+    });
+  }, [fieldDefs]);
+
+  useEffect(() => {
+    const t = timers.current;
+    return () => {
+      for (const key of Object.keys(t)) {
+        clearTimeout(t[key]);
+        delete t[key];
+      }
+    };
+  }, []);
+
+  const clearTimer = (key: string) => {
+    const t = timers.current[key];
+    if (t) {
+      clearTimeout(t);
+      delete timers.current[key];
+    }
+  };
+
+  const inFlight = useRef<Record<string, boolean>>({});
+
+  const save = (key: string, value: string) => {
+    const st = fieldsRef.current[key];
+    const def = fieldDefs.find((d) => d.key === key);
+    if (!st || !def || value === st.saved || inFlight.current[key]) return;
+    inFlight.current[key] = true;
+    const payload: Record<string, unknown> = {
+      id: spec.id,
+      field: def.field,
+      value,
+    };
+    if (def.index !== undefined) payload.index = def.index;
+    fetch("/api/follow-ups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (res.ok) {
+          setFields((f) => ({
+            ...f,
+            [key]: { ...f[key], saved: value },
+          }));
+        }
+      })
+      .finally(() => {
+        inFlight.current[key] = false;
+      });
+  };
+
+  const triggerSave = (key: string) => {
+    const st = fieldsRef.current[key];
+    if (!st) return;
+    clearTimer(key);
+    save(key, st.draft);
+  };
+
+  const setDraft = (key: string, draft: string) => {
+    setFields((f) => {
+      const cur = f[key] ?? { draft: "", saved: "" };
+      return { ...f, [key]: { ...cur, draft } };
+    });
+    clearTimer(key);
+    timers.current[key] = setTimeout(() => {
+      clearTimer(key);
+      triggerSave(key);
+    }, 5000);
+  };
+
+  const indicator = (key: string): IndicatorState => {
+    const st = fields[key];
+    if (!st) return "idle";
+    if (st.draft !== st.saved) return "pending";
+    return st.saved !== "" ? "saved" : "idle";
+  };
+
+  const draftOf = (key: string) => fields[key]?.draft ?? "";
+
+  // Status editing: optimistic local update, reverted on a failed save;
+  // store updates (SSE refetches) adopt the server status.
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
+  useEffect(() => {
+    setLocalStatus(null);
+  }, [spec]);
+  const status = localStatus ?? spec.status;
+
+  const handleStatusChange = (next: string) => {
+    if (next === status) return;
+    setLocalStatus(next);
+    fetch("/api/specs/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: spec.id, status: next }),
+    })
+      .then((res) => {
+        if (!res.ok) setLocalStatus(null);
+      })
+      .catch(() => {
+        setLocalStatus(null);
+      });
+  };
+
+  const criteria = criteriaList(spec.acceptance_criteria);
+
+  return (
+    <Item data-testid={`spec-row-${spec.id}`} className="py-4">
+      <ItemHeader>
+        <ItemTitle
+          data-testid={`spec-id-${spec.id}`}
+          className="font-mono text-base"
+        >
+          {spec.id}
+        </ItemTitle>
+        <ItemActions>
+          {status ? (
             <Badge variant="secondary" data-testid={`spec-status-${spec.id}`}>
-              {spec.status}
+              {status}
             </Badge>
           ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm">{spec.description}</p>
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Why:</span> {spec.motivation}
-        </p>
-        <div>
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            Acceptance criteria
+          {statuses.length > 0 ? (
+            <RadioGroup
+              data-testid={`status-radio-${spec.id}`}
+              value={status}
+              onValueChange={(v: string) => handleStatusChange(v)}
+              className="flex w-fit items-center gap-3"
+            >
+              {statuses.map((s) => (
+                <label
+                  key={s.name}
+                  htmlFor={`status-opt-${spec.id}-${s.name}`}
+                  className="flex cursor-pointer items-center gap-2 text-sm"
+                >
+                  <RadioGroupItem
+                    id={`status-opt-${spec.id}-${s.name}`}
+                    data-testid={`status-option-${spec.id}-${s.name}`}
+                    value={s.name}
+                  />
+                  {s.name}
+                </label>
+              ))}
+            </RadioGroup>
+          ) : null}
+        </ItemActions>
+      </ItemHeader>
+      <ItemContent>
+        <div data-testid={`follow-up-${spec.id}`} className="space-y-2">
+          <p data-testid={`spec-description-${spec.id}`} className="text-sm">
+            {spec.description}
           </p>
-          <ul className="ml-4 list-disc text-sm">
-            {criteriaList(spec.acceptance_criteria).map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
-        </div>
-        {note ? (
-          <div data-testid={`follow-up-${spec.id}`} className="rounded-lg bg-muted p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide">
-              Follow-up notes
-            </p>
-            {note.description ? (
-              <p className="mt-1 text-sm">{note.description}</p>
-            ) : null}
-            {note.motivation ? (
-              <p className="mt-1 text-sm text-muted-foreground">{note.motivation}</p>
-            ) : null}
-            {note.acceptance_criteria ? (
-              <ol className="ml-4 list-decimal text-sm">
-                {Object.entries(note.acceptance_criteria)
-                  .sort(
-                    (a, b) =>
-                      (Number.parseInt(a[0], 10) || 0) -
-                      (Number.parseInt(b[0], 10) || 0),
-                  )
-                  .map(([key, value]) => (
-                    <li key={key}>{value}</li>
-                  ))}
-              </ol>
-            ) : null}
+          <div className="flex items-start gap-2">
+            <Textarea
+              data-testid={`follow-up-desc-${spec.id}`}
+              className="flex-1"
+              value={draftOf("description")}
+              onChange={(e) => setDraft("description", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  triggerSave("description");
+                }
+              }}
+              onBlur={() => triggerSave("description")}
+            />
+            <NoteIndicator
+              testId={`follow-up-indicator-desc-${spec.id}`}
+              state={indicator("description")}
+            />
           </div>
-        ) : null}
-      </CardContent>
-    </Card>
+          <p
+            data-testid={`spec-motivation-${spec.id}`}
+            className="text-sm text-muted-foreground"
+          >
+            <span className="font-medium text-foreground">Why:</span>{" "}
+            {spec.motivation}
+          </p>
+          <div className="flex items-start gap-2">
+            <Textarea
+              data-testid={`follow-up-motivation-${spec.id}`}
+              className="flex-1"
+              value={draftOf("motivation")}
+              onChange={(e) => setDraft("motivation", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  triggerSave("motivation");
+                }
+              }}
+              onBlur={() => triggerSave("motivation")}
+            />
+            <NoteIndicator
+              testId={`follow-up-indicator-motivation-${spec.id}`}
+              state={indicator("motivation")}
+            />
+          </div>
+          <div data-testid={`spec-criteria-${spec.id}`}>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              Acceptance criteria
+            </p>
+            {criteria.map((c, i) => (
+              <div key={i} className="space-y-1">
+                <ul className="ml-4 list-disc text-sm">
+                  <li>{c}</li>
+                </ul>
+                <div className="flex items-start gap-2">
+                  <Textarea
+                    data-testid={`follow-up-criterion-${spec.id}-${i}`}
+                    className="flex-1"
+                    value={draftOf(`criterion-${i}`)}
+                    onChange={(e) => setDraft(`criterion-${i}`, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        triggerSave(`criterion-${i}`);
+                      }
+                    }}
+                    onBlur={() => triggerSave(`criterion-${i}`)}
+                  />
+                  <NoteIndicator
+                    testId={`follow-up-indicator-criterion-${spec.id}-${i}`}
+                    state={indicator(`criterion-${i}`)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </ItemContent>
+    </Item>
   );
 }
 
@@ -128,12 +410,14 @@ function LayerGroup({
   layers,
   pathKey,
   followUpsById,
+  statuses,
 }: {
   node: GroupNode;
   depth: number;
   layers: string[];
   pathKey: string;
   followUpsById: Map<string, FollowUpItem>;
+  statuses: StatusOption[];
 }) {
   const layerName = layers[depth] ?? "";
   const terms = [...node.children.keys()].sort();
@@ -166,6 +450,7 @@ function LayerGroup({
               layers={layers}
               pathKey={`${pathKey}-${term}`}
               followUpsById={followUpsById}
+              statuses={statuses}
             />
           ))}
           {node.specs.map((spec) => (
@@ -173,6 +458,7 @@ function LayerGroup({
               key={spec.id}
               spec={spec}
               note={followUpsById.get(spec.id)}
+              statuses={statuses}
             />
           ))}
         </div>
@@ -187,6 +473,9 @@ function SpecTree({ data }: { data: StoreData }) {
     [data.followUps],
   );
   const layers = data.config?.taxonomy?.layers;
+  const statuses = Array.isArray(data.config?.status)
+    ? data.config.status
+    : [];
 
   if (Array.isArray(layers)) {
     const root = buildTree(data.specs, layers);
@@ -201,10 +490,16 @@ function SpecTree({ data }: { data: StoreData }) {
             layers={layers}
             pathKey={term}
             followUpsById={followUpsById}
+            statuses={statuses}
           />
         ))}
         {root.specs.map((spec) => (
-          <SpecRow key={spec.id} spec={spec} note={followUpsById.get(spec.id)} />
+          <SpecRow
+            key={spec.id}
+            spec={spec}
+            note={followUpsById.get(spec.id)}
+            statuses={statuses}
+          />
         ))}
       </div>
     );
@@ -213,7 +508,12 @@ function SpecTree({ data }: { data: StoreData }) {
   return (
     <div className="space-y-2">
       {data.specs.map((spec) => (
-        <SpecRow key={spec.id} spec={spec} note={followUpsById.get(spec.id)} />
+        <SpecRow
+          key={spec.id}
+          spec={spec}
+          note={followUpsById.get(spec.id)}
+          statuses={statuses}
+        />
       ))}
     </div>
   );

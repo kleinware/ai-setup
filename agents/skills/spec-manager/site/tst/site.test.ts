@@ -4,6 +4,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
+import { parse } from "yaml";
 
 // Hermetic site tests: every run copies the fixture spec store into a fresh
 // scratch directory and launches the real launcher script against it. The
@@ -123,6 +124,108 @@ function specRowIds(page: Page): Promise<string[]> {
     els.map((el) => el.getAttribute("data-testid")!.slice("spec-row-".length)),
   );
 }
+
+type FollowUpDoc = { items?: Array<Record<string, unknown>> };
+
+function fuItem(doc: FollowUpDoc, id: string): Record<string, unknown> | undefined {
+  return (doc.items ?? []).find((it) => it.id === id);
+}
+
+function parseFollowUpFile(root: string): FollowUpDoc {
+  return parse(readFileSync(join(root, "spec", "spec_follow_up.yaml"), "utf8")) as FollowUpDoc;
+}
+
+async function pollFollowUp(
+  root: string,
+  pred: (doc: FollowUpDoc) => boolean,
+  timeoutMs: number,
+): Promise<FollowUpDoc> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown = null;
+  while (Date.now() < deadline) {
+    try {
+      const doc = parseFollowUpFile(root);
+      if (pred(doc)) return doc;
+    } catch (e) {
+      lastErr = e;
+    }
+    await sleep(500);
+  }
+  throw new Error(`spec_follow_up.yaml never satisfied predicate: ${String(lastErr)}`);
+}
+
+async function pollYaml(
+  root: string,
+  file: string,
+  pred: (doc: unknown) => boolean,
+  timeoutMs: number,
+): Promise<unknown> {
+  const path = join(root, file);
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown = null;
+  while (Date.now() < deadline) {
+    try {
+      const doc = parse(readFileSync(path, "utf8"));
+      if (pred(doc)) return doc;
+    } catch (e) {
+      lastErr = e;
+    }
+    await sleep(500);
+  }
+  throw new Error(`YAML file ${file} never satisfied predicate: ${String(lastErr)}`);
+}
+
+// Guard against another dev server squatting the port: the served store must
+// be this test's scratch root, not somebody else's.
+async function expectServing(root: string): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/specs`, { cache: "no-store" });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { root?: string };
+  expect(body.root).toBe(root);
+}
+
+// Expected fixture spec content, hardcoded per the fixture target state.
+const SPEC_DATA: Record<
+  string,
+  { description: string; motivation: string; criteria: string[]; status: string }
+> = {
+  "app_ui_list_items-paginated": {
+    description: "The list shows one page of items at a time with a pager.",
+    motivation: "Large lists must stay readable, so items are paginated.",
+    criteria: [
+      "The pager controls which page of items is shown.",
+      "Page navigation updates the visible items without reloading the page.",
+    ],
+    status: "pending",
+  },
+  "app_ui_list_items-sorted": {
+    description: "List items render in stable, deterministic order.",
+    motivation: "Users compare rows across reloads, so ordering must not jump.",
+    criteria: ["Items keep the same relative order on every render."],
+    status: "done",
+  },
+  "app_ui_table_columns-resize": {
+    description: "Table columns can be resized by dragging their dividers.",
+    motivation: "Dense data needs adjustable column widths.",
+    criteria: [
+      "Dragging a divider changes the column width.",
+      "The resized width persists within the session.",
+    ],
+    status: "pending",
+  },
+  "tools_cli_run_flags-parsed": {
+    description: "The run subcommand parses flags in single- and double-dash form.",
+    motivation: "Users type flags both ways, so both must work.",
+    criteria: ["Single-dash and double-dash flags parse to the same values."],
+    status: "pending",
+  },
+  "tools_cli_run_output-stream": {
+    description: "Run output streams to stdout as it is produced.",
+    motivation: "Long-running commands need live progress feedback.",
+    criteria: ["Output appears on stdout before the command finishes."],
+    status: "done",
+  },
+};
 
 test(
   "T1 [tooling_spec-manager_site_launch] launcher starts a server and GET / returns the site with 200",
@@ -347,6 +450,414 @@ test(
         for (const id of FIXTURE_IDS.filter((id) => id.startsWith("app_"))) {
           expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(1);
         }
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T8 [tooling_spec-manager_site_status-edit] each spec is its own shadcn item with id, a status radio group, description, motivation, and acceptance criteria",
+  async () => {
+    await withServer(async (root) => {
+      await expectServing(root);
+      const config = parse(readFileSync(join(root, "spec", ".config.yaml"), "utf8")) as {
+        status?: Array<{ name: string; description: string }>;
+      };
+      const statuses = (config.status ?? []).map((s) => s.name);
+      expect(statuses.length).toBeGreaterThan(0);
+
+      const page = await openPage();
+      try {
+        for (const id of FIXTURE_IDS) {
+          const spec = SPEC_DATA[id];
+
+          expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(1);
+          expect((await page.locator(`[data-testid="spec-id-${id}"]`).textContent())?.trim()).toBe(id);
+
+          expect(await page.locator(`[data-testid="status-radio-${id}"]`).count()).toBe(1);
+          expect(
+            await page.locator(`[data-testid^="status-option-${id}-"]`).count(),
+          ).toBe(statuses.length);
+          for (const status of statuses) {
+            expect(
+              await page.locator(`[data-testid="status-option-${id}-${status}"]`).count(),
+            ).toBe(1);
+          }
+
+          expect(
+            (await page.locator(`[data-testid="spec-description-${id}"]`).textContent())?.trim(),
+          ).toBe(spec.description);
+          expect(
+            (await page.locator(`[data-testid="spec-motivation-${id}"]`).textContent()) ?? "",
+          ).toContain(spec.motivation);
+
+          const criteria = page.locator(`[data-testid="spec-criteria-${id}"]`);
+          expect(await criteria.count()).toBe(1);
+          const criteriaText = (await criteria.textContent()) ?? "";
+          for (const criterion of spec.criteria) {
+            expect(criteriaText).toContain(criterion);
+          }
+
+          expect(
+            await page
+              .locator(`[data-testid="status-option-${id}-${spec.status}"]`)
+              .getAttribute("aria-checked"),
+          ).toBe("true");
+        }
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T9 [tooling_spec-manager_site_status-edit] selecting a status in the UI writes the new status into the leaf spec.yaml and the UI shows it",
+  async () => {
+    const id = "tools_cli_run_flags-parsed";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        await page.locator(`[data-testid="status-option-${id}-done"]`).click();
+
+        await page.waitForFunction(
+          (i: string) => {
+            const opt = document.querySelector(`[data-testid="status-option-${i}-done"]`);
+            const badge = document.querySelector(`[data-testid="spec-status-${i}"]`);
+            return (
+              opt !== null &&
+              opt.getAttribute("aria-checked") === "true" &&
+              (badge?.textContent ?? "").trim() === "done"
+            );
+          },
+          id,
+          { timeout: 15_000 },
+        );
+
+        await pollYaml(root, "spec/tools_cli_run.spec.yaml", (doc: unknown) => {
+          const d = doc as { specs?: Array<Record<string, unknown>> };
+          const entry = (d.specs ?? []).find((s) => s.id === id);
+          return entry !== undefined && entry.status === "done";
+        }, 15_000);
+
+        const doc = parse(
+          readFileSync(join(root, "spec", "tools_cli_run.spec.yaml"), "utf8"),
+        ) as { specs?: Array<Record<string, unknown>> };
+        const entry = (doc.specs ?? []).find((s) => s.id === id);
+        expect(entry).toBeDefined();
+        expect(entry!.status).toBe("done");
+        expect(entry!.description).toBe(
+          "The run subcommand parses flags in single- and double-dash form.",
+        );
+        expect(entry!.motivation).toBe("Users type flags both ways, so both must work.");
+        expect(entry!.acceptance_criteria).toEqual([
+          "Single-dash and double-dash flags parse to the same values.",
+        ]);
+        const sibling = (doc.specs ?? []).find((s) => s.id === "tools_cli_run_output-stream");
+        expect(sibling).toBeDefined();
+        expect(sibling!.status).toBe("done");
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T10 [tooling_spec-manager_site_follow-up-file] saving follow-up notes for several spec ids writes spec_follow_up.yaml with items sorted by id and exact field shape",
+  async () => {
+    const sortedText = "How are items re-sorted when the list is refreshed?";
+    const streamText = "The stream must flush buffered output before exit.";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        await page
+          .locator('[data-testid="follow-up-criterion-app_ui_list_items-sorted-0"]')
+          .fill(sortedText);
+        await page.keyboard.press("Enter");
+
+        await page
+          .locator('[data-testid="follow-up-desc-tools_cli_run_output-stream"]')
+          .fill(streamText);
+        await page.keyboard.press("Enter");
+
+        await page.waitForFunction(
+          () => {
+            const a = document.querySelector(
+              '[data-testid="follow-up-indicator-criterion-app_ui_list_items-sorted-0"]',
+            );
+            const b = document.querySelector(
+              '[data-testid="follow-up-indicator-desc-tools_cli_run_output-stream"]',
+            );
+            return (
+              a !== null &&
+              a.getAttribute("data-state") === "saved" &&
+              b !== null &&
+              b.getAttribute("data-state") === "saved"
+            );
+          },
+          { timeout: 15_000 },
+        );
+
+        await pollFollowUp(
+          root,
+          (doc) => JSON.stringify(doc.items ?? []).includes(sortedText) &&
+            JSON.stringify(doc.items ?? []).includes(streamText),
+          15_000,
+        );
+
+        const doc = parseFollowUpFile(root);
+        const items = doc.items ?? [];
+        expect(items.length).toBe(4);
+        expect(items.map((it) => it.id)).toEqual([
+          "app_ui_list_items-paginated",
+          "app_ui_list_items-sorted",
+          "tools_cli_run_flags-parsed",
+          "tools_cli_run_output-stream",
+        ]);
+
+        const sorted = fuItem(doc, "app_ui_list_items-sorted")!;
+        expect(sorted.acceptance_criteria).toEqual({ 0: sortedText });
+        expect(Object.keys(sorted).sort()).toEqual(["acceptance_criteria", "id"]);
+        expect("description" in sorted).toBe(false);
+        expect("motivation" in sorted).toBe(false);
+
+        const stream = fuItem(doc, "tools_cli_run_output-stream")!;
+        expect(stream.description).toBe(streamText);
+        expect("motivation" in stream).toBe(false);
+        expect("acceptance_criteria" in stream).toBe(false);
+
+        const paginated = fuItem(doc, "app_ui_list_items-paginated")!;
+        expect(paginated.description).toBe(
+          "The pager must keep the active page across data refreshes.",
+        );
+        expect(paginated.motivation).toBe(
+          "Live updates must not lose the user's place in the list.",
+        );
+        expect(paginated.acceptance_criteria).toEqual({
+          0: "The active page index is preserved when new data arrives.",
+          1: "The pager highlights the active page number.",
+        });
+
+        const flags = fuItem(doc, "tools_cli_run_flags-parsed")!;
+        expect(flags.description).toBe(
+          "Flag parsing must reject unknown flags with a usage hint.",
+        );
+        expect("motivation" in flags).toBe(false);
+        expect(flags.acceptance_criteria).toEqual({
+          0: "Unknown flags exit non-zero and print a usage message.",
+        });
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T11 [tooling_spec-manager_site_follow-up-notes] typing shows a yellow pending indicator; saving writes spec_follow_up.yaml and turns the indicator green",
+  async () => {
+    const id = "app_ui_table_columns-resize";
+    const text = "Does resizing persist across reloads?";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        await page.locator(`[data-testid="follow-up-desc-${id}"]`).fill(text);
+
+        await page.waitForFunction(
+          (tid: string) => {
+            const el = document.querySelector(`[data-testid="${tid}"]`);
+            return (
+              el !== null &&
+              el.getAttribute("data-state") === "pending" &&
+              (el.getAttribute("class") ?? "").includes("bg-yellow-400")
+            );
+          },
+          `follow-up-indicator-desc-${id}`,
+          { timeout: 10_000 },
+        );
+
+        await page.keyboard.press("Enter");
+
+        await page.waitForFunction(
+          (tid: string) => {
+            const el = document.querySelector(`[data-testid="${tid}"]`);
+            return (
+              el !== null &&
+              el.getAttribute("data-state") === "saved" &&
+              (el.getAttribute("class") ?? "").includes("text-green-600")
+            );
+          },
+          `follow-up-indicator-desc-${id}`,
+          { timeout: 15_000 },
+        );
+
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            return item !== undefined && item.description === text;
+          },
+          15_000,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T12 [tooling_spec-manager_site_follow-up-notes] 5 seconds of inactivity auto-saves and shows the green checkmark",
+  async () => {
+    const id = "tools_cli_run_flags-parsed";
+    const text = "Why not also document the double-dash behavior?";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        await page.locator(`[data-testid="follow-up-motivation-${id}"]`).fill(text);
+
+        await page.waitForFunction(
+          (tid: string) => {
+            const el = document.querySelector(`[data-testid="${tid}"]`);
+            return el !== null && el.getAttribute("data-state") === "pending";
+          },
+          `follow-up-indicator-motivation-${id}`,
+          { timeout: 10_000 },
+        );
+
+        // stop interacting; the 5s inactivity timer should auto-save
+        await sleep(6000);
+
+        await page.waitForFunction(
+          (tid: string) => {
+            const el = document.querySelector(`[data-testid="${tid}"]`);
+            return (
+              el !== null &&
+              el.getAttribute("data-state") === "saved" &&
+              (el.getAttribute("class") ?? "").includes("text-green-600")
+            );
+          },
+          `follow-up-indicator-motivation-${id}`,
+          { timeout: 10_000 },
+        );
+
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            return item !== undefined && item.motivation === text;
+          },
+          15_000,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T13 [tooling_spec-manager_site_follow-up-notes] clearing a textarea removes the field; clearing all fields leaves an id-only item",
+  async () => {
+    const id = "app_ui_list_items-paginated";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        const clearField = async (testId: string) => {
+          await page.locator(`[data-testid="${testId}"]`).fill("");
+          await page.keyboard.press("Enter");
+        };
+
+        await clearField(`follow-up-criterion-${id}-0`);
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            if (item === undefined) return false;
+            const crit = (item.acceptance_criteria ?? {}) as Record<string, string>;
+            return (
+              !("0" in crit) &&
+              crit["1"] === "The pager highlights the active page number." &&
+              item.description === "The pager must keep the active page across data refreshes." &&
+              item.motivation === "Live updates must not lose the user's place in the list."
+            );
+          },
+          15_000,
+        );
+
+        await clearField(`follow-up-desc-${id}`);
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            if (item === undefined) return false;
+            const crit = (item.acceptance_criteria ?? {}) as Record<string, string>;
+            return (
+              !("description" in item) &&
+              item.motivation === "Live updates must not lose the user's place in the list." &&
+              crit["1"] === "The pager highlights the active page number."
+            );
+          },
+          15_000,
+        );
+
+        await clearField(`follow-up-motivation-${id}`);
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            if (item === undefined) return false;
+            return (
+              !("motivation" in item) &&
+              !("description" in item) &&
+              JSON.stringify(item.acceptance_criteria ?? {}).includes(
+                "The pager highlights the active page number.",
+              )
+            );
+          },
+          15_000,
+        );
+
+        await clearField(`follow-up-criterion-${id}-1`);
+        const doc = await pollFollowUp(
+          root,
+          (d) => {
+            const item = fuItem(d, id);
+            return item !== undefined && Object.keys(item).length === 1 && item.id === id;
+          },
+          15_000,
+        );
+
+        const items = doc.items ?? [];
+        expect(items.length).toBeGreaterThan(0);
+        expect(items.map((it) => it.id)).toEqual([
+          "app_ui_list_items-paginated",
+          "tools_cli_run_flags-parsed",
+        ]);
+        const final = fuItem(doc, id)!;
+        expect(Object.keys(final)).toEqual(["id"]);
+        const flags = fuItem(doc, "tools_cli_run_flags-parsed")!;
+        expect(flags.description).toBe(
+          "Flag parsing must reject unknown flags with a usage hint.",
+        );
+        expect(flags.acceptance_criteria).toEqual({
+          0: "Unknown flags exit non-zero and print a usage message.",
+        });
+        expect("motivation" in flags).toBe(false);
       } finally {
         await page.close();
       }
