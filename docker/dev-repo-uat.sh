@@ -179,7 +179,9 @@ verify_stack() {
 
     # Opencode inference works.
     local oc_out
-    if ! oc_out="$(timeout 180 ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" 'opencode run hi' </dev/null 2>&1)"; then
+    # 600s: the model server queues concurrent inference, so a single run can
+    # take much longer than the usual few seconds when other runs are active.
+    if ! oc_out="$(timeout 600 ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" 'opencode run hi' </dev/null 2>&1)"; then
         fail_test "opencode inference failed" "ssh $host 'opencode run hi'" "$oc_out"
     fi
     ok_test
