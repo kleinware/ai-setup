@@ -1,6 +1,6 @@
 ---
 name: spec-manager
-description: Creates, updates, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.yaml files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
+description: Creates, updates, deletes, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.yaml files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, delete an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
 ---
 
 # Spec Manager Skill
@@ -89,6 +89,7 @@ Run from anywhere in the repo; the script resolves the repo root itself. Any act
 ```bash
 bash <skill-dir>/spec.sh read --id <id>
 bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <name>] [--meta <yaml>]
+bash <skill-dir>/spec.sh delete --id <id>
 bash <skill-dir>/spec.sh find --query <keyword>
 bash <skill-dir>/spec.sh query config
 bash <skill-dir>/spec.sh query tasks [--status <name>] [--layer <path> ...]
@@ -101,6 +102,7 @@ bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 
 - `read` — prints the full spec YAML for `--id`.
 - `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. Reports `action=create` or `action=update`.
+- `delete` — removes the spec with `--id` from its leaf file. The file is rewritten atomically with the remaining specs (still sorted by id), and the file is deleted when the removed spec was its last entry. Fails with `not-found` when no spec has that id.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, status (when enabled), and meta (when present), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings, plus `meta` when present.
 - `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of `{name, description}` objects), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
 - `query tasks` — lists the specs matching `--status <name>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings, plus `meta` (only when present).
@@ -116,9 +118,10 @@ After any `config` change, run `validate`: a declared term without specs, or a s
 
 The first stdout line is always a single key=value status line; exit 0 = success, 1 = failure, 2 = usage error.
 
-- Success: `status=success action=<read|create|update|find|query-config|query-tasks|validate|config-get|config-set|config-add|config-remove> ...`
+- Success: `status=success action=<read|create|update|delete|find|query-config|query-tasks|validate|config-get|config-set|config-add|config-remove> ...`
   - `read`: the spec YAML follows after a blank line.
   - `write`: `path=<leaf file name>` names the file the spec was written to.
+  - `delete`: `path=<leaf file name>` names the file the spec was removed from; the file is deleted when the removed spec was its last entry.
   - `find`: a YAML list of `id`/`description` mappings (plus `meta` when present) follows after a blank line.
   - `query-config`: the normalized config YAML follows after a blank line, or `file=missing` with no YAML.
   - `query-tasks`: a YAML list of `id`/`description`/`status` (status only when enabled) mappings (plus `meta` only when present) follows after a blank line; the status line echoes `status=<state>` and one `layer=<path>` per layer filter, plus `count=<n>`.
@@ -137,7 +140,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `term-not-found` — a `config add`/`config remove` term, or a term in the `--parent` path, is not declared in the taxonomy structure
   - `term-exists` — `config add` of a term that is already declared
   - `validate-failed` — duplicate IDs, schema/status/taxonomy violations, a spec in the wrong leaf file, or declared taxonomy terms with no specs
-  - `not-found` — read of an unknown id (`known=` lists existing ids)
+  - `not-found` — read or delete of an unknown id (`known=` lists existing ids)
   - `spec-file-missing` — no `*.spec.yaml` files exist in the spec directory
   - `legacy-store` — a legacy `spec/SPECS.md` file exists; specs are partitioned into `*.spec.yaml` files
   - `malformed-store` — a `*.spec.yaml` file is not a `specs:` list of mappings
@@ -174,7 +177,7 @@ A leaf group is getting too big when its file holds more than about 10 specs, or
 2. When the user picks an option, perform the full refactor:
    1. Update the taxonomy with the `config` actions: `config set` for `--layers` and `--structure`, `config add` for new leaf terms, `config remove` for terms that no longer exist.
    2. For every spec that moves, run `write` with its new ID, copying the description, motivation, acceptance criteria, and status from the old spec.
-   3. Remove the old entries from their old leaf files, and delete any leaf file left empty.
+    3. Run `delete` for every old entry; it removes the spec from its leaf file and deletes any leaf file left empty.
    4. Run `validate` and fix any problems until the store passes.
 3. Confirm the refactor: list the new leaf files and how many specs each holds.
 

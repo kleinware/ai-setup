@@ -6,6 +6,7 @@
 //     read     --id <id>
 //     write    --id <id> --description <text> --motivation <text> \
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>] [--meta <yaml>]
+//     delete   --id <id>
 //     find     --query <string>
 //     query    config
 //              tasks [--status <name>] [--layer <path> ...]
@@ -54,8 +55,9 @@ const USAGE = `Usage:
   spec.sh [--spec-dir <dir>] <action> [flags]
 
 Actions:
-   read     --id <id>
-    write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>] [--meta <yaml>]
+  read     --id <id>
+   write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>] [--meta <yaml>]
+   delete   --id <id>
    find     --query <string>
    query    config
             tasks [--status <name>] [--layer <path> ...]
@@ -71,6 +73,7 @@ Flags:
 const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria", "status", "meta"],
+  delete: ["id"],
   find: ["query"],
   query: ["status", "layer"],
   validate: [],
@@ -80,6 +83,7 @@ const KNOWN_FLAGS: Record<string, string[]> = {
 const REQUIRED_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria"],
+  delete: ["id"],
   find: ["query"],
   query: [],
   validate: [],
@@ -648,6 +652,43 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
   return 0;
 }
 
+function doDelete(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+  const id = args.id as string;
+  if (!idRegex(cfg.layers).test(id)) {
+    fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
+  }
+  const store = loadStore(specDir);
+  if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB, id }, store.detail));
+  let file: string | null = null;
+  let remaining: Record<string, unknown>[] | null = null;
+  for (const [name, specs] of Object.entries(store.files)) {
+    if (specs.some((s) => s.id === id)) {
+      file = name;
+      remaining = specs.filter((s) => s.id !== id);
+      break;
+    }
+  }
+  if (file === null || remaining === null) {
+    const known = Object.values(store.files)
+      .flat()
+      .map((s) => String(s.id))
+      .join(",");
+    fail("not-found", { id, known });
+  }
+  const filePath = path.join(specDir, file);
+  try {
+    if (remaining.length === 0) {
+      fs.unlinkSync(filePath);
+    } else {
+      writeFile(filePath, remaining);
+    }
+  } catch (e) {
+    fail("io-error", { file, error: errLine(e) });
+  }
+  console.log(`status=success action=delete id=${id} path=${file}`);
+  return 0;
+}
+
 function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: Config): number {
   const query = args.query as string;
   const store = loadStore(specDir);
@@ -1019,6 +1060,8 @@ function main(argv: string[]): number {
       return doRead(opts, specDir, cfg);
     case "write":
       return doWrite(opts, specDir, cfg);
+    case "delete":
+      return doDelete(opts, specDir, cfg);
     case "find":
       return doFind(opts, specDir, cfg);
     case "query":

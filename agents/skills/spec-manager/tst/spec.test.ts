@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +28,7 @@ type Case = {
   expectCode: number;
   expectContains: string[];
   expectFile?: { name: string; contains: string[]; notContains?: string[] };
+  expectFileMissing?: string;
 };
 
 const cases: Case[] = [
@@ -56,13 +57,60 @@ const cases: Case[] = [
       contains: ["\n\n  - id: a_b_c_two", "\n\n  - id: a_b_c_three"],
     },
   },
-  {
-    name: "write updates existing spec",
-    fix: "h-write-update",
-    args: ["write", "--id", "a_b_c_one", "--description", "first spec v2", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "done"],
-    expectCode: 0,
-    expectContains: ["action=update", "a_b_c_one", "path=a_b_c.spec.yaml"],
-  },
+    {
+      name: "write updates existing spec",
+      fix: "h-write-update",
+      args: ["write", "--id", "a_b_c_one", "--description", "first spec v2", "--motivation", "because", "--acceptance-criteria", "ok", "--status", "done"],
+      expectCode: 0,
+      expectContains: ["action=update", "a_b_c_one", "path=a_b_c.spec.yaml"],
+    },
+    {
+      name: "delete removes a spec from a leaf file",
+      fix: "h-write-append",
+      args: ["delete", "--id", "a_b_c_two"],
+      expectCode: 0,
+      expectContains: ["action=delete", "a_b_c_two", "path=a_b_c.spec.yaml"],
+      expectFile: {
+        name: "a_b_c.spec.yaml",
+        contains: ["a_b_c_one"],
+        notContains: ["a_b_c_two"],
+      },
+    },
+    {
+      name: "delete removes the last spec and deletes the leaf file",
+      fix: "h-read",
+      args: ["delete", "--id", "a_b_c_one"],
+      expectCode: 0,
+      expectContains: ["action=delete", "a_b_c_one", "path=a_b_c.spec.yaml"],
+      expectFileMissing: "a_b_c.spec.yaml",
+    },
+    {
+      name: "delete removes a spec from the flat file",
+      fix: "h-delete-flat",
+      args: ["delete", "--id", "flat-two"],
+      expectCode: 0,
+      expectContains: ["action=delete", "flat-two", "path=specs.spec.yaml"],
+      expectFile: {
+        name: "specs.spec.yaml",
+        contains: ["flat-one"],
+        notContains: ["flat-two"],
+      },
+    },
+    {
+      name: "delete removes the last flat spec and deletes the file",
+      fix: "h-flat",
+      args: ["delete", "--id", "flat-one"],
+      expectCode: 0,
+      expectContains: ["action=delete", "flat-one", "path=specs.spec.yaml"],
+      expectFileMissing: "specs.spec.yaml",
+    },
+    {
+      name: "delete of a missing id fails",
+      fix: "s-read-missing",
+      args: ["delete", "--id", "a_b_c_missing"],
+      expectCode: 1,
+      expectContains: ["reason=not-found"],
+    },
   {
     name: "find returns matches across leaf files",
     fix: "h-find",
@@ -604,6 +652,9 @@ describe("spec-manager CLI", () => {
           for (const s of c.expectFile.notContains ?? []) {
             expect(content).not.toContain(s);
           }
+        }
+        if (c.expectFileMissing) {
+          expect(existsSync(join(dir, c.expectFileMissing))).toBe(false);
         }
       } finally {
         rmSync(dir, { recursive: true, force: true });
