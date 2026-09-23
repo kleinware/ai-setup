@@ -669,12 +669,15 @@ test(
   "T11 [tooling_spec-manager_site_follow-up-notes] typing shows a yellow pending indicator; saving writes spec_follow_up.yaml and turns the indicator green",
   async () => {
     const id = "app_ui_table_columns-resize";
-    const text = "Does resizing persist across reloads?";
+    // multi-line: tall enough to grow the textarea past its min-height
+    const text =
+      "Does resizing persist across reloads?\nAnd across browser tabs?\nAnd across window resizes?";
     await withServer(async (root) => {
       await expectServing(root);
       const page = await openPage();
       try {
         const field = page.locator(`[data-testid="follow-up-desc-${id}"]`);
+        const emptyHeight = (await field.boundingBox())!.height;
         await field.fill(text);
 
         // while typing, the indicator is the yellow pending dot
@@ -694,6 +697,17 @@ test(
         // Enter inserts a newline; it does NOT save
         await page.keyboard.press("Enter");
         expect(await field.inputValue()).toBe(`${text}\n`);
+        // the textarea grows vertically to fit the extra line
+        await page.waitForFunction(
+          (min: number) => {
+            const el = document.querySelector(
+              `[data-testid="follow-up-desc-${id}"]`,
+            );
+            return el !== null && el.getBoundingClientRect().height > min;
+          },
+          emptyHeight,
+          { timeout: 10_000 },
+        );
         // still pending, and nothing has been written to disk yet
         await page.waitForFunction(
           (tid: string) => {
