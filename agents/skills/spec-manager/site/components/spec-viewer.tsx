@@ -14,6 +14,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import {
   Item,
   ItemActions,
@@ -21,7 +22,17 @@ import {
   ItemHeader,
   ItemTitle,
 } from "@/components/ui/item";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,9 +70,81 @@ function buildTree(specs: SpecEntry[], layers: string[]): GroupNode {
   return root;
 }
 
-function countSpecs(node: GroupNode): number {
-  let count = node.specs.length;
-  for (const child of node.children.values()) count += countSpecs(child);
+// A spec matches the active filters when it matches every one of them:
+// status (when set), taxonomy branch (when set), and text query (when set).
+type SpecFilter = (spec: SpecEntry) => boolean;
+
+function makeFilter(
+  status: string,
+  taxonomy: string,
+  query: string,
+): SpecFilter {
+  const needle = query.trim().toLowerCase();
+  return (spec) => {
+    if (status !== "" && spec.status !== status) return false;
+    if (taxonomy !== "") {
+      const prefix = taxonomy.split("/").join("_") + "_";
+      if (!spec.id.startsWith(prefix)) return false;
+    }
+    if (needle !== "") {
+      const fields: string[] = [
+        spec.id,
+        spec.description,
+        spec.motivation,
+        ...criteriaList(spec.acceptance_criteria),
+      ];
+      if (!fields.some((f) => f.toLowerCase().includes(needle))) return false;
+    }
+    return true;
+  };
+}
+
+// Every taxonomy branch in the store: each area, and each deeper
+// component/section branch present in the configured structure.
+function structureBranches(
+  structure: Record<string, unknown>,
+  prefix: string,
+): string[] {
+  const out: string[] = [];
+  for (const [term, value] of Object.entries(structure)) {
+    const path = prefix === "" ? term : `${prefix}/${term}`;
+    out.push(path);
+    if (value !== null && typeof value === "object") {
+      if (Array.isArray(value)) {
+        // leaf list: each term is a branch of the final layer
+        for (const item of value) out.push(`${path}/${String(item)}`);
+      } else {
+        out.push(...structureBranches(value as Record<string, unknown>, path));
+      }
+    }
+  }
+  return out;
+}
+
+function collectTaxonomyOptions(data: StoreData): string[] {
+  const taxonomy = data.config?.taxonomy;
+  let branches: string[] = [];
+  if (taxonomy && Array.isArray(taxonomy.layers)) {
+    if (taxonomy.structure) {
+      branches = structureBranches(taxonomy.structure, "");
+    } else {
+      // No declared structure: derive branches from the spec ids themselves.
+      const set = new Set<string>();
+      for (const spec of data.specs) {
+        const parts = spec.id.split("_").slice(0, taxonomy.layers.length);
+        for (let i = 1; i <= parts.length; i++) {
+          set.add(parts.slice(0, i).join("/"));
+        }
+      }
+      branches = [...set];
+    }
+  }
+  return branches.sort();
+}
+
+function countVisible(node: GroupNode, filter: SpecFilter): number {
+  let count = node.specs.filter(filter).length;
+  for (const child of node.children.values()) count += countVisible(child, filter);
   return count;
 }
 
@@ -411,6 +494,7 @@ function LayerGroup({
   pathKey,
   followUpsById,
   statuses,
+  filter,
 }: {
   node: GroupNode;
   depth: number;
@@ -418,9 +502,15 @@ function LayerGroup({
   pathKey: string;
   followUpsById: Map<string, FollowUpItem>;
   statuses: StatusOption[];
+  filter: SpecFilter;
 }) {
+  const visibleCount = countVisible(node, filter);
+  if (visibleCount === 0) return null;
   const layerName = layers[depth] ?? "";
-  const terms = [...node.children.keys()].sort();
+  const terms = [...node.children.keys()]
+    .filter((term) => countVisible(node.children.get(term)!, filter) > 0)
+    .sort();
+  const visibleSpecs = node.specs.filter(filter);
   return (
     <Collapsible
       defaultOpen
@@ -437,7 +527,7 @@ function LayerGroup({
           {node.term}
         </span>
         <Badge variant="outline" className="ml-auto">
-          {countSpecs(node)}
+          {visibleCount}
         </Badge>
       </CollapsibleTrigger>
       <CollapsibleContent>
@@ -451,9 +541,10 @@ function LayerGroup({
               pathKey={`${pathKey}-${term}`}
               followUpsById={followUpsById}
               statuses={statuses}
+              filter={filter}
             />
           ))}
-          {node.specs.map((spec) => (
+          {visibleSpecs.map((spec) => (
             <SpecRow
               key={spec.id}
               spec={spec}
@@ -467,7 +558,13 @@ function LayerGroup({
   );
 }
 
-function SpecTree({ data }: { data: StoreData }) {
+function SpecTree({
+  data,
+  filter,
+}: {
+  data: StoreData;
+  filter: SpecFilter;
+}) {
   const followUpsById = useMemo(
     () => new Map(data.followUps.map((f) => [f.id, f])),
     [data.followUps],
@@ -479,7 +576,20 @@ function SpecTree({ data }: { data: StoreData }) {
 
   if (Array.isArray(layers)) {
     const root = buildTree(data.specs, layers);
-    const terms = [...root.children.keys()].sort();
+    const terms = [...root.children.keys()]
+      .filter((term) => countVisible(root.children.get(term)!, filter) > 0)
+      .sort();
+    const visibleRootSpecs = root.specs.filter(filter);
+    const visibleTotal =
+      terms.reduce((sum, term) => sum + countVisible(root.children.get(term)!, filter), 0) +
+      visibleRootSpecs.length;
+    if (visibleTotal === 0) {
+      return (
+        <div data-testid="no-matches" className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          No specs match the active filters.
+        </div>
+      );
+    }
     return (
       <div className="space-y-2">
         {terms.map((term) => (
@@ -491,9 +601,10 @@ function SpecTree({ data }: { data: StoreData }) {
             pathKey={term}
             followUpsById={followUpsById}
             statuses={statuses}
+            filter={filter}
           />
         ))}
-        {root.specs.map((spec) => (
+        {visibleRootSpecs.map((spec) => (
           <SpecRow
             key={spec.id}
             spec={spec}
@@ -505,9 +616,18 @@ function SpecTree({ data }: { data: StoreData }) {
     );
   }
 
+  const visibleSpecs = data.specs.filter(filter);
+  if (visibleSpecs.length === 0) {
+    return (
+      <div data-testid="no-matches" className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+        No specs match the active filters.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      {data.specs.map((spec) => (
+      {visibleSpecs.map((spec) => (
         <SpecRow
           key={spec.id}
           spec={spec}
@@ -515,6 +635,99 @@ function SpecTree({ data }: { data: StoreData }) {
           statuses={statuses}
         />
       ))}
+    </div>
+  );
+}
+
+function FilterBar({
+  statuses,
+  taxonomyOptions,
+  statusFilter,
+  taxonomyFilter,
+  textQuery,
+  onStatusFilter,
+  onTaxonomyFilter,
+  onTextQuery,
+}: {
+  statuses: StatusOption[];
+  taxonomyOptions: string[];
+  statusFilter: string;
+  taxonomyFilter: string;
+  textQuery: string;
+  onStatusFilter: (value: string) => void;
+  onTaxonomyFilter: (value: string) => void;
+  onTextQuery: (value: string) => void;
+}) {
+  return (
+    <div
+      data-testid="filter-bar"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 p-2.5"
+    >
+      {statuses.length > 0 ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Status</span>
+          <Select
+            value={statusFilter}
+            onValueChange={(v: string | null) => onStatusFilter(v ?? "")}
+          >
+            <SelectTrigger data-testid="filter-status" className="h-8 min-w-32">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" data-testid="filter-status-option-all">
+                All statuses
+              </SelectItem>
+              {statuses.map((s) => (
+                <SelectItem
+                  key={s.name}
+                  value={s.name}
+                  data-testid={`filter-status-option-${s.name}`}
+                >
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      ) : null}
+      {taxonomyOptions.length > 0 ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Taxonomy</span>
+          <Select
+            value={taxonomyFilter}
+            onValueChange={(v: string | null) => onTaxonomyFilter(v ?? "")}
+          >
+            <SelectTrigger data-testid="filter-taxonomy" className="h-8 min-w-32">
+              <SelectValue placeholder="All taxonomy" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" data-testid="filter-taxonomy-option-all">
+                All taxonomy
+              </SelectItem>
+              {taxonomyOptions.map((path) => (
+                <SelectItem
+                  key={path}
+                  value={path}
+                  data-testid={`filter-taxonomy-option-${path.replaceAll("/", "-")}`}
+                >
+                  {path}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      ) : null}
+      <label className="flex min-w-56 flex-1 items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Text</span>
+        <Input
+          data-testid="filter-text"
+          type="text"
+          className="h-8 min-w-48 flex-1"
+          placeholder="Search id, description, motivation, criteria"
+          value={textQuery}
+          onChange={(e) => onTextQuery(e.target.value)}
+        />
+      </label>
     </div>
   );
 }
@@ -534,6 +747,11 @@ export default function SpecViewer() {
   const [data, setData] = useState<StoreData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  // Active filters; "" means no filter for that control. All three apply
+  // together (AND); clearing one restores the list subject to the rest.
+  const [statusFilter, setStatusFilter] = useState("");
+  const [taxonomyFilter, setTaxonomyFilter] = useState("");
+  const [textQuery, setTextQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -572,6 +790,17 @@ export default function SpecViewer() {
     };
   }, []);
 
+  const config = data?.config;
+  const statuses = config && Array.isArray(config.status) ? config.status : [];
+  const taxonomyOptions = useMemo(
+    () => (data ? collectTaxonomyOptions(data) : []),
+    [data],
+  );
+  const filter = useMemo(
+    () => makeFilter(statusFilter, taxonomyFilter, textQuery),
+    [statusFilter, taxonomyFilter, textQuery],
+  );
+
   return (
     <main className="flex min-h-svh flex-col gap-4 p-6">
       <header className="flex items-center justify-between gap-4">
@@ -608,7 +837,17 @@ export default function SpecViewer() {
               </ul>
             </div>
           ) : null}
-          <SpecTree data={data} />
+          <FilterBar
+            statuses={statuses}
+            taxonomyOptions={taxonomyOptions}
+            statusFilter={statusFilter}
+            taxonomyFilter={taxonomyFilter}
+            textQuery={textQuery}
+            onStatusFilter={setStatusFilter}
+            onTaxonomyFilter={setTaxonomyFilter}
+            onTextQuery={setTextQuery}
+          />
+          <SpecTree data={data} filter={filter} />
         </>
       ) : (
         <Loading />

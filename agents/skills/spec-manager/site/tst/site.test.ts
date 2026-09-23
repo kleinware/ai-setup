@@ -865,3 +865,236 @@ test(
   },
   180_000,
 );
+
+// --- Spike: tooling_spec-manager_site_filters (T14-T17) -------------------
+
+// Click a filter select's trigger, wait for the popup to open, click the
+// option, and wait for the popup to close (aria-expanded back to false).
+async function selectFilter(
+  page: Page,
+  triggerTestId: string,
+  optionTestId: string,
+): Promise<void> {
+  await page.locator(`[data-testid="${triggerTestId}"]`).click();
+  const option = page.locator(`[data-testid="${optionTestId}"]`);
+  await option.waitFor({ state: "visible", timeout: 10_000 });
+  await option.click();
+  await page.waitForFunction(
+    (tid: string) => {
+      const t = document.querySelector(`[data-testid="${tid}"]`);
+      return t !== null && t.getAttribute("aria-expanded") === "false";
+    },
+    triggerTestId,
+    { timeout: 10_000 },
+  );
+}
+
+// Poll until exactly the expected spec ids are present as rows in the DOM.
+async function waitForRowIds(
+  page: Page,
+  expected: string[],
+  timeoutMs = 15_000,
+): Promise<void> {
+  await page.waitForFunction(
+    (exp: string[]) => {
+      const actual = [...document.querySelectorAll('[data-testid^="spec-row-"]')]
+        .map((el) => el.getAttribute("data-testid")!.slice("spec-row-".length))
+        .sort();
+      return JSON.stringify(actual) === JSON.stringify([...exp].sort());
+    },
+    expected,
+    { timeout: timeoutMs },
+  );
+}
+
+test(
+  "T14 [tooling_spec-manager_site_filters] filtering by status leaves only specs carrying that status",
+  async () => {
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        await waitForRowIds(page, FIXTURE_IDS);
+
+        // status=pending: only the three pending specs remain
+        await selectFilter(page, "filter-status", "filter-status-option-pending");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+          "tools_cli_run_flags-parsed",
+        ]);
+        for (const id of ["app_ui_list_items-sorted", "tools_cli_run_output-stream"]) {
+          expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(0);
+        }
+
+        // live updates still work while a filter is active: editing a pending
+        // spec's description on disk updates its visible row in place
+        const marker = "FILTER-LIVE-MARKER-7";
+        const file = join(root, "spec", "tools_cli_run.spec.yaml");
+        const before = readFileSync(file, "utf8");
+        const after = before.replace(
+          "The run subcommand parses flags in single- and double-dash form.",
+          `The run subcommand parses flags in single- and double-dash form. ${marker}`,
+        );
+        expect(after !== before).toBe(true);
+        writeFileSync(file, after);
+        await page.waitForFunction(
+          (m: string) => document.body.innerText.includes(m),
+          marker,
+          { timeout: 15_000 },
+        );
+        const row = page.locator('[data-testid="spec-row-tools_cli_run_flags-parsed"]');
+        expect((await row.textContent()) ?? "").toContain(marker);
+        // the filtered set is unchanged by the update
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+          "tools_cli_run_flags-parsed",
+        ]);
+
+        // switching to status=done shows exactly the done specs
+        await selectFilter(page, "filter-status", "filter-status-option-done");
+        await waitForRowIds(page, [
+          "app_ui_list_items-sorted",
+          "tools_cli_run_output-stream",
+        ]);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T15 [tooling_spec-manager_site_filters] filtering by taxonomy value leaves only specs within that taxonomy branch",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        await waitForRowIds(page, FIXTURE_IDS);
+
+        // component branch app/ui: only the specs under app/ui remain
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-app-ui");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_list_items-sorted",
+          "app_ui_table_columns-resize",
+        ]);
+        for (const id of ["tools_cli_run_flags-parsed", "tools_cli_run_output-stream"]) {
+          expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(0);
+        }
+        // the whole sibling branch is removed from the DOM
+        expect(await page.locator('[data-testid="group-tools"]').count()).toBe(0);
+        // the group badge reflects the filtered count
+        expect(
+          (await page.locator('[data-testid="group-app"]').textContent()) ?? "",
+        ).toContain("3");
+
+        // a deeper section branch from the other area
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-tools-cli-run");
+        await waitForRowIds(page, [
+          "tools_cli_run_flags-parsed",
+          "tools_cli_run_output-stream",
+        ]);
+        expect(await page.locator('[data-testid="group-app"]').count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T16 [tooling_spec-manager_site_filters] a text query leaves only specs whose id, description, motivation, or a criterion contains it, case-insensitively",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        // uppercase query matching description + criterion text of one spec
+        await page.locator('[data-testid="filter-text"]').fill("PAGER");
+        await waitForRowIds(page, ["app_ui_list_items-paginated"]);
+        const row = page.locator('[data-testid="spec-row-app_ui_list_items-paginated"]');
+        expect((await row.textContent()) ?? "").toContain("with a pager");
+        for (const id of FIXTURE_IDS.filter((id) => id !== "app_ui_list_items-paginated")) {
+          expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(0);
+        }
+
+        // mixed-case query matching a spec's id and description
+        await page.locator('[data-testid="filter-text"]').fill("STREAM");
+        await waitForRowIds(page, ["tools_cli_run_output-stream"]);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "T17 [tooling_spec-manager_site_filters] multiple filters apply together; clearing each one restores the list step by step",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        await waitForRowIds(page, FIXTURE_IDS);
+
+        // status=pending + text=pager -> only the pending spec mentioning pager
+        await selectFilter(page, "filter-status", "filter-status-option-pending");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+          "tools_cli_run_flags-parsed",
+        ]);
+        await page.locator('[data-testid="filter-text"]').fill("pager");
+        await waitForRowIds(page, ["app_ui_list_items-paginated"]);
+
+        // clearing the text query restores what the status filter alone yields
+        await page.locator('[data-testid="filter-text"]').fill("");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+          "tools_cli_run_flags-parsed",
+        ]);
+
+        // adding a taxonomy filter narrows to the pending app/ui specs
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-app-ui");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+        ]);
+
+        // clearing the taxonomy filter restores the pending set
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-all");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "app_ui_table_columns-resize",
+          "tools_cli_run_flags-parsed",
+        ]);
+
+        // no spec matches status=done + text=pager: rows disappear, no-match shown
+        await selectFilter(page, "filter-status", "filter-status-option-done");
+        await page.locator('[data-testid="filter-text"]').fill("pager");
+        await page.waitForFunction(
+          () =>
+            document.querySelector('[data-testid="no-matches"]') !== null &&
+            document.querySelectorAll('[data-testid^="spec-row-"]').length === 0,
+          { timeout: 10_000 },
+        );
+
+        // clearing the text query restores the done set
+        await page.locator('[data-testid="filter-text"]').fill("");
+        await waitForRowIds(page, ["app_ui_list_items-sorted", "tools_cli_run_output-stream"]);
+
+        // clearing the status filter restores the full list
+        await selectFilter(page, "filter-status", "filter-status-option-all");
+        await waitForRowIds(page, FIXTURE_IDS);
+        expect(await page.locator('[data-testid="no-matches"]').count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
