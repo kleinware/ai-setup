@@ -5,7 +5,7 @@
 // the /api/specs/status endpoint, and auto-saved follow-up notes via the
 // /api/follow-ups endpoint.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,13 +15,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemHeader,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemTitle } from "@/components/ui/item";
 import {
   RadioGroup,
   RadioGroupItem,
@@ -185,6 +179,22 @@ function NoteIndicator({
       {state === "saved" ? <RiCheckLine /> : null}
     </span>
   );
+}
+
+// A textarea that grows vertically with its content (the base min-height is
+// kept), so multi-line text stays fully visible. Enter is a plain newline;
+// saving happens on blur or after 5s of inactivity via the parent's draft
+// machinery.
+function AutoGrowTextarea(props: ComponentProps<"textarea">) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const { value, ...rest } = props;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return <Textarea ref={ref} value={value} {...rest} />;
 }
 
 function SpecRow({
@@ -362,127 +372,122 @@ function SpecRow({
 
   return (
     <Item data-testid={`spec-row-${spec.id}`} className="py-4">
-      <ItemHeader>
-        <ItemTitle
-          data-testid={`spec-id-${spec.id}`}
-          className="font-mono text-base"
+      <Collapsible defaultOpen className="w-full">
+        <CollapsibleTrigger
+          data-testid={`spec-toggle-${spec.id}`}
+          className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-muted dark:hover:bg-muted/50"
         >
-          {spec.id}
-        </ItemTitle>
-        <ItemActions>
-          {status ? (
-            <Badge variant="secondary" data-testid={`spec-status-${spec.id}`}>
-              {status}
-            </Badge>
-          ) : null}
-          {statuses.length > 0 ? (
-            <RadioGroup
-              data-testid={`status-radio-${spec.id}`}
-              value={status}
-              onValueChange={(v: string) => handleStatusChange(v)}
-              className="flex w-fit items-center gap-3"
-            >
-              {statuses.map((s) => (
-                <label
-                  key={s.name}
-                  htmlFor={`status-opt-${spec.id}-${s.name}`}
-                  className="flex cursor-pointer items-center gap-2 text-sm"
-                >
-                  <RadioGroupItem
-                    id={`status-opt-${spec.id}-${s.name}`}
-                    data-testid={`status-option-${spec.id}-${s.name}`}
-                    value={s.name}
-                  />
-                  {s.name}
-                </label>
-              ))}
-            </RadioGroup>
-          ) : null}
-        </ItemActions>
-      </ItemHeader>
-      <ItemContent>
-        <div data-testid={`follow-up-${spec.id}`} className="space-y-2">
-          <p data-testid={`spec-description-${spec.id}`} className="text-sm">
-            {spec.description}
-          </p>
-          <div className="flex items-start gap-2">
-            <Textarea
-              data-testid={`follow-up-desc-${spec.id}`}
-              className="flex-1"
-              value={draftOf("description")}
-              onChange={(e) => setDraft("description", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  triggerSave("description");
-                }
-              }}
-              onBlur={() => triggerSave("description")}
-            />
-            <NoteIndicator
-              testId={`follow-up-indicator-desc-${spec.id}`}
-              state={indicator("description")}
-            />
-          </div>
-          <p
-            data-testid={`spec-motivation-${spec.id}`}
-            className="text-sm text-muted-foreground"
+          <ItemTitle
+            data-testid={`spec-id-${spec.id}`}
+            className="font-mono text-base"
           >
-            <span className="font-medium text-foreground">Why:</span>{" "}
-            {spec.motivation}
-          </p>
-          <div className="flex items-start gap-2">
-            <Textarea
-              data-testid={`follow-up-motivation-${spec.id}`}
-              className="flex-1"
-              value={draftOf("motivation")}
-              onChange={(e) => setDraft("motivation", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  triggerSave("motivation");
-                }
-              }}
-              onBlur={() => triggerSave("motivation")}
-            />
-            <NoteIndicator
-              testId={`follow-up-indicator-motivation-${spec.id}`}
-              state={indicator("motivation")}
-            />
+            {spec.id}
+          </ItemTitle>
+          <RiArrowDownSLine className="ml-auto size-4 shrink-0 text-muted-foreground data-[panel-open]:rotate-180 transition-transform" />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div
+            data-testid={`spec-status-area-${spec.id}`}
+            className="flex flex-wrap items-center gap-3 px-3 pt-1"
+          >
+            <span className="shrink-0 text-sm text-muted-foreground">Status</span>
+            {statuses.length > 0 ? (
+              <RadioGroup
+                data-testid={`status-radio-${spec.id}`}
+                value={status}
+                onValueChange={(v: string) => handleStatusChange(v)}
+                className="flex w-fit items-center gap-3"
+              >
+                {statuses.map((s) => (
+                  <label
+                    key={s.name}
+                    htmlFor={`status-opt-${spec.id}-${s.name}`}
+                    className="flex cursor-pointer items-center gap-2 text-sm"
+                  >
+                    <RadioGroupItem
+                      id={`status-opt-${spec.id}-${s.name}`}
+                      data-testid={`status-option-${spec.id}-${s.name}`}
+                      value={s.name}
+                    />
+                    {s.name}
+                  </label>
+                ))}
+              </RadioGroup>
+            ) : null}
+            {status ? (
+              <Badge variant="secondary" data-testid={`spec-status-${spec.id}`}>
+                {status}
+              </Badge>
+            ) : null}
           </div>
-          <div data-testid={`spec-criteria-${spec.id}`}>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">
-              Acceptance criteria
+          <div
+            data-testid={`follow-up-${spec.id}`}
+            className="space-y-2 px-3 pb-1"
+          >
+            <p data-testid={`spec-description-${spec.id}`} className="text-sm">
+              {spec.description}
             </p>
-            {criteria.map((c, i) => (
-              <div key={i} className="space-y-1">
-                <ul className="ml-4 list-disc text-sm">
-                  <li>{c}</li>
-                </ul>
-                <div className="flex items-start gap-2">
-                  <Textarea
-                    data-testid={`follow-up-criterion-${spec.id}-${i}`}
-                    className="flex-1"
-                    value={draftOf(`criterion-${i}`)}
-                    onChange={(e) => setDraft(`criterion-${i}`, e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        triggerSave(`criterion-${i}`);
-                      }
-                    }}
-                    onBlur={() => triggerSave(`criterion-${i}`)}
-                  />
-                  <NoteIndicator
-                    testId={`follow-up-indicator-criterion-${spec.id}-${i}`}
-                    state={indicator(`criterion-${i}`)}
-                  />
+            <div className="flex items-start gap-2">
+              <AutoGrowTextarea
+                data-testid={`follow-up-desc-${spec.id}`}
+                className="flex-1"
+                value={draftOf("description")}
+                onChange={(e) => setDraft("description", e.target.value)}
+                onBlur={() => triggerSave("description")}
+              />
+              <NoteIndicator
+                testId={`follow-up-indicator-desc-${spec.id}`}
+                state={indicator("description")}
+              />
+            </div>
+            <p
+              data-testid={`spec-motivation-${spec.id}`}
+              className="text-sm text-muted-foreground"
+            >
+              <span className="font-medium text-foreground">Why:</span>{" "}
+              {spec.motivation}
+            </p>
+            <div className="flex items-start gap-2">
+              <AutoGrowTextarea
+                data-testid={`follow-up-motivation-${spec.id}`}
+                className="flex-1"
+                value={draftOf("motivation")}
+                onChange={(e) => setDraft("motivation", e.target.value)}
+                onBlur={() => triggerSave("motivation")}
+              />
+              <NoteIndicator
+                testId={`follow-up-indicator-motivation-${spec.id}`}
+                state={indicator("motivation")}
+              />
+            </div>
+            <div data-testid={`spec-criteria-${spec.id}`}>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Acceptance criteria
+              </p>
+              {criteria.map((c, i) => (
+                <div key={i} className="space-y-1">
+                  <ul className="ml-4 list-disc text-sm">
+                    <li>{c}</li>
+                  </ul>
+                  <div className="flex items-start gap-2">
+                    <AutoGrowTextarea
+                      data-testid={`follow-up-criterion-${spec.id}-${i}`}
+                      className="flex-1"
+                      value={draftOf(`criterion-${i}`)}
+                      onChange={(e) => setDraft(`criterion-${i}`, e.target.value)}
+                      onBlur={() => triggerSave(`criterion-${i}`)}
+                    />
+                    <NoteIndicator
+                      testId={`follow-up-indicator-criterion-${spec.id}-${i}`}
+                      state={indicator(`criterion-${i}`)}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </ItemContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Item>
   );
 }
@@ -639,6 +644,12 @@ function SpecTree({
   );
 }
 
+// The taxonomy trigger's fixed chrome, in px: pl-2.5 (10) + gap-1.5 (6) +
+// chevron icon size-4 (16) + pr-2 (8) + two 1px borders (2). The trigger is
+// sized to the longest option label plus this chrome, so every option's
+// label fits fully when selected.
+const TRIGGER_CHROME_PX = 42;
+
 function FilterBar({
   statuses,
   taxonomyOptions,
@@ -658,6 +669,24 @@ function FilterBar({
   onTaxonomyFilter: (value: string) => void;
   onTextQuery: (value: string) => void;
 }) {
+  // The longest option label ("All taxonomy" plus every taxonomy branch);
+  // its rendered width is measured in a hidden span in the same font as the
+  // popup option labels, and drives the trigger's min-width.
+  const longestLabel = useMemo(
+    () =>
+      ["All taxonomy", ...taxonomyOptions].reduce((a, b) =>
+        b.length > a.length ? b : a,
+      ),
+    [taxonomyOptions],
+  );
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [longestLabelWidth, setLongestLabelWidth] = useState(0);
+  useEffect(() => {
+    const el = measureRef.current;
+    if (!el) return;
+    setLongestLabelWidth(el.getBoundingClientRect().width);
+  }, [longestLabel]);
+
   return (
     <div
       data-testid="filter-bar"
@@ -697,7 +726,11 @@ function FilterBar({
             value={taxonomyFilter}
             onValueChange={(v: string | null) => onTaxonomyFilter(v ?? "")}
           >
-            <SelectTrigger data-testid="filter-taxonomy" className="h-8 min-w-32">
+            <SelectTrigger
+              data-testid="filter-taxonomy"
+              className="h-8 min-w-32"
+              style={{ minWidth: longestLabelWidth + TRIGGER_CHROME_PX }}
+            >
               <SelectValue placeholder="All taxonomy" />
             </SelectTrigger>
             <SelectContent>
@@ -715,6 +748,13 @@ function FilterBar({
               ))}
             </SelectContent>
           </Select>
+          <span
+            ref={measureRef}
+            aria-hidden
+            className="invisible absolute pointer-events-none whitespace-nowrap text-sm"
+          >
+            {longestLabel}
+          </span>
         </label>
       ) : null}
       <label className="flex min-w-56 flex-1 items-center gap-2 text-sm">

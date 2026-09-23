@@ -274,11 +274,13 @@ describe("UAT [tooling_spec-manager_site_uat]", () => {
           // --- Step 2: type follow-up text into fields of two spec ids ---
           // web_ui_list_rows-paginated: description + acceptance criterion 0;
           // tools_cli_run_flags-parsed: motivation. Each save is triggered
-          // deterministically by pressing Enter in the focused textarea and
-          // waiting for that field's indicator to turn saved.
+          // deterministically by blurring the focused textarea (Enter only
+          // inserts a newline) and waiting for that field's indicator to turn
+          // saved.
           const typeAndSave = async (fieldTestId: string, text: string, indicatorTestId: string) => {
-            await page.locator(`[data-testid="${fieldTestId}"]`).fill(text);
-            await page.keyboard.press("Enter");
+            const field = page.locator(`[data-testid="${fieldTestId}"]`);
+            await field.fill(text);
+            await field.blur();
             await page.waitForFunction(
               (tid: string) => {
                 const el = document.querySelector(`[data-testid="${tid}"]`);

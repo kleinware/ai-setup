@@ -578,15 +578,18 @@ test(
       await expectServing(root);
       const page = await openPage();
       try {
-        await page
-          .locator('[data-testid="follow-up-criterion-app_ui_list_items-sorted-0"]')
-          .fill(sortedText);
-        await page.keyboard.press("Enter");
+        // Saving is triggered by blur (Enter only inserts a newline).
+        const criterion = page.locator(
+          '[data-testid="follow-up-criterion-app_ui_list_items-sorted-0"]',
+        );
+        await criterion.fill(sortedText);
+        await criterion.blur();
 
-        await page
-          .locator('[data-testid="follow-up-desc-tools_cli_run_output-stream"]')
-          .fill(streamText);
-        await page.keyboard.press("Enter");
+        const desc = page.locator(
+          '[data-testid="follow-up-desc-tools_cli_run_output-stream"]',
+        );
+        await desc.fill(streamText);
+        await desc.blur();
 
         await page.waitForFunction(
           () => {
@@ -671,8 +674,10 @@ test(
       await expectServing(root);
       const page = await openPage();
       try {
-        await page.locator(`[data-testid="follow-up-desc-${id}"]`).fill(text);
+        const field = page.locator(`[data-testid="follow-up-desc-${id}"]`);
+        await field.fill(text);
 
+        // while typing, the indicator is the yellow pending dot
         await page.waitForFunction(
           (tid: string) => {
             const el = document.querySelector(`[data-testid="${tid}"]`);
@@ -686,8 +691,30 @@ test(
           { timeout: 10_000 },
         );
 
+        // Enter inserts a newline; it does NOT save
         await page.keyboard.press("Enter");
+        expect(await field.inputValue()).toBe(`${text}\n`);
+        // still pending, and nothing has been written to disk yet
+        await page.waitForFunction(
+          (tid: string) => {
+            const el = document.querySelector(`[data-testid="${tid}"]`);
+            return el !== null && el.getAttribute("data-state") === "pending";
+          },
+          `follow-up-indicator-desc-${id}`,
+          { timeout: 10_000 },
+        );
+        let written = false;
+        try {
+          const early = parseFollowUpFile(root);
+          const item = fuItem(early, id);
+          written = item !== undefined && item.description === `${text}\n`;
+        } catch {
+          written = false;
+        }
+        expect(written).toBe(false);
 
+        // blur saves: the indicator turns green and the file carries the text
+        await field.blur();
         await page.waitForFunction(
           (tid: string) => {
             const el = document.querySelector(`[data-testid="${tid}"]`);
@@ -705,7 +732,7 @@ test(
           root,
           (doc) => {
             const item = fuItem(doc, id);
-            return item !== undefined && item.description === text;
+            return item !== undefined && item.description === `${text}\n`;
           },
           15_000,
         );
@@ -777,9 +804,11 @@ test(
       await expectServing(root);
       const page = await openPage();
       try {
+        // Saving is triggered by blur (Enter only inserts a newline).
         const clearField = async (testId: string) => {
-          await page.locator(`[data-testid="${testId}"]`).fill("");
-          await page.keyboard.press("Enter");
+          const field = page.locator(`[data-testid="${testId}"]`);
+          await field.fill("");
+          await field.blur();
         };
 
         await clearField(`follow-up-criterion-${id}-0`);
@@ -1091,6 +1120,206 @@ test(
         await selectFilter(page, "filter-status", "filter-status-option-all");
         await waitForRowIds(page, FIXTURE_IDS);
         expect(await page.locator('[data-testid="no-matches"]').count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+// --- Spike: tooling_spec-manager_site_grouped-view per-spec collapse (T18) ---
+
+test(
+  "T18 [tooling_spec-manager_site_grouped-view] each spec item collapses by its id, showing only the id; it is expanded by default and siblings are unaffected",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        const id = "app_ui_list_items-paginated";
+        const trigger = page.locator(`[data-testid="spec-toggle-${id}"]`);
+        expect(await trigger.count()).toBe(1);
+
+        // spec items are expanded by default
+        expect(await trigger.getAttribute("aria-expanded")).toBe("true");
+        expect(await page.locator(`[data-testid="follow-up-${id}"]`).count()).toBe(1);
+
+        // collapsing shows only the spec id; every detail leaves the DOM
+        await trigger.click();
+        await page.waitForFunction(
+          (tid: string) => {
+            const t = document.querySelector(`[data-testid="${tid}"]`);
+            return t !== null && t.getAttribute("aria-expanded") === "false";
+          },
+          `spec-toggle-${id}`,
+          { timeout: 10_000 },
+        );
+        expect(await page.locator(`[data-testid="spec-id-${id}"]`).count()).toBe(1);
+        expect(await page.locator(`[data-testid="spec-status-${id}"]`).count()).toBe(0);
+        expect(await page.locator(`[data-testid="follow-up-${id}"]`).count()).toBe(0);
+        expect(
+          await page.locator(`[data-testid="spec-description-${id}"]`).count(),
+        ).toBe(0);
+
+        // a sibling spec stays expanded with its details visible
+        const siblingId = "app_ui_list_items-sorted";
+        const siblingTrigger = page.locator(`[data-testid="spec-toggle-${siblingId}"]`);
+        expect(await siblingTrigger.getAttribute("aria-expanded")).toBe("true");
+        expect(await page.locator(`[data-testid="follow-up-${siblingId}"]`).count()).toBe(1);
+
+        // expanding restores the details
+        await trigger.click();
+        await page.waitForFunction(
+          (tid: string) => {
+            const t = document.querySelector(`[data-testid="${tid}"]`);
+            return t !== null && t.getAttribute("aria-expanded") === "true";
+          },
+          `spec-toggle-${id}`,
+          { timeout: 10_000 },
+        );
+        expect(await page.locator(`[data-testid="follow-up-${id}"]`).count()).toBe(1);
+        expect(await page.locator(`[data-testid="spec-status-${id}"]`).count()).toBe(1);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+// --- Spike: tooling_spec-manager_site_filters trigger width (T19) -----------
+
+test(
+  "T19 [tooling_spec-manager_site_filters] the taxonomy trigger is sized to the longest option label; selecting that option shows its full label unclipped and filters to the branch",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        // The component measures the longest option label in a hidden span
+        // in the filter bar, rendered in the same font as the popup option
+        // labels; that width is the ground truth for the longest label.
+        const measure = page.locator('[data-testid="filter-bar"] .invisible');
+        expect(await measure.count()).toBe(1);
+        const longestLabel = ((await measure.textContent()) ?? "").trim();
+        expect(longestLabel.length).toBeGreaterThan(0);
+        const measureBox = (await measure.boundingBox())!;
+        expect(measureBox.width).toBeGreaterThan(0);
+
+        // the trigger's rendered width covers the longest label plus the
+        // trigger chrome (padding + gap + icon + borders)
+        const triggerBox = (
+          await page.locator('[data-testid="filter-taxonomy"]').boundingBox()
+        )!;
+        expect(triggerBox.width).toBeGreaterThanOrEqual(measureBox.width + 38);
+
+        // open the taxonomy dropdown and select the longest option
+        await page.locator('[data-testid="filter-taxonomy"]').click();
+        await page
+          .locator('[data-testid="filter-taxonomy-option-all"]')
+          .waitFor({ state: "visible", timeout: 10_000 });
+        const options = await page.$$eval(
+          '[data-testid^="filter-taxonomy-option-"]',
+          (els) =>
+            els.map((el) => ({
+              testId: el.getAttribute("data-testid") ?? "",
+              label: (el.querySelector("div")?.textContent ?? "").trim(),
+            })),
+        );
+        expect(options.length).toBeGreaterThan(0);
+        const longest = options.find((o) => o.label === longestLabel);
+        if (longest === undefined) {
+          throw new Error(`no taxonomy option with label "${longestLabel}"`);
+        }
+
+        // selecting the longest option shows its full label in the trigger,
+        // unclipped, and filters the list to that taxonomy branch
+        await page.locator(`[data-testid="${longest.testId}"]`).click();
+        await page.waitForFunction(
+          (tid: string) => {
+            const t = document.querySelector(`[data-testid="${tid}"]`);
+            return t !== null && t.getAttribute("aria-expanded") === "false";
+          },
+          "filter-taxonomy",
+          { timeout: 10_000 },
+        );
+
+        const value = page
+          .locator('[data-testid="filter-taxonomy"]')
+          .locator('[data-slot="select-value"]');
+        expect(((await value.textContent()) ?? "").trim()).toBe(longest.label);
+        expect(
+          await value.evaluate((el) => el.scrollWidth - el.clientWidth),
+        ).toBeLessThanOrEqual(0.5);
+
+        // the selected taxonomy value filters the list ("All taxonomy"
+        // shows every spec)
+        const expected =
+          longest.label === "All taxonomy"
+            ? FIXTURE_IDS
+            : FIXTURE_IDS.filter((fid) =>
+                fid.startsWith(longest.label.split("/").join("_") + "_"),
+              );
+        await waitForRowIds(page, expected);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+// --- Spike: tooling_spec-manager_site_status-edit layout (T20) ------------
+
+test(
+  "T20 [tooling_spec-manager_site_status-edit] the status label and radio group sit directly under the spec id, left-aligned in the item; the radio still writes the leaf file and updates the UI",
+  async () => {
+    const id = "app_ui_list_items-paginated";
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        // the status area (label + radio group) sits directly under the id:
+        // it is the first element of the item's collapsible content
+        const area = page.locator(`[data-testid="spec-status-area-${id}"]`);
+        expect(await area.count()).toBe(1);
+        expect(
+          await area.evaluate((el) => el.parentElement?.firstElementChild === el),
+        ).toBe(true);
+        expect(
+          await area
+            .locator(`[data-testid="status-radio-${id}"]`)
+            .count(),
+        ).toBe(1);
+
+        // vertically below the id, left-aligned with the item's content edge
+        const idBox = (await page.locator(`[data-testid="spec-id-${id}"]`).boundingBox())!;
+        const itemBox = (
+          await page.locator(`[data-testid="spec-row-${id}"]`).boundingBox()
+        )!;
+        const areaBox = (await area.boundingBox())!;
+        expect(areaBox.y).toBeGreaterThanOrEqual(idBox.y + idBox.height - 1);
+        expect(Math.abs(areaBox.x - (itemBox.x + 13))).toBeLessThanOrEqual(1);
+
+        // the radio still writes the new status to the leaf file and UI
+        await page.locator(`[data-testid="status-option-${id}-done"]`).click();
+        await page.waitForFunction(
+          (i: string) => {
+            const opt = document.querySelector(`[data-testid="status-option-${i}-done"]`);
+            const badge = document.querySelector(`[data-testid="spec-status-${i}"]`);
+            return (
+              opt !== null &&
+              opt.getAttribute("aria-checked") === "true" &&
+              (badge?.textContent ?? "").trim() === "done"
+            );
+          },
+          id,
+          { timeout: 15_000 },
+        );
+        await pollYaml(root, "spec/app_ui_list.spec.yaml", (doc: unknown) => {
+          const d = doc as { specs?: Array<Record<string, unknown>> };
+          const entry = (d.specs ?? []).find((s) => s.id === id);
+          return entry !== undefined && entry.status === "done";
+        }, 15_000);
       } finally {
         await page.close();
       }
