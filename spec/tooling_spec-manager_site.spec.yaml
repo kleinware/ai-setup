@@ -10,6 +10,8 @@ specs:
       - A text query leaves only specs whose id, description, motivation, or any acceptance
         criterion contains the query text; matching is case-insensitive.
       - Multiple active filters apply together, and clearing a filter restores the full list.
+      - The taxonomy filter's dropdown trigger is sized to fit the longest option in the list, not
+        just the currently selected value, so every option's label is fully visible when selected.
     status: done
 
   - id: tooling_spec-manager_site_follow-up-file
@@ -30,27 +32,36 @@ specs:
   - id: tooling_spec-manager_site_follow-up-notes
     description: Below each spec's description, motivation, and each acceptance criterion, a shadcn
       textarea collects questions, concerns, and instructions for the spec curator agent; typed text
-      auto-saves to spec/spec_follow_up.yaml on blur, on Enter, or after 5 seconds of inactivity,
-      with a yellow pending indicator while typing that turns into a green checkmark once saved.
+      auto-saves to spec/spec_follow_up.yaml on blur or after 5 seconds of inactivity, with a yellow
+      pending indicator while typing that turns into a green checkmark once saved; Enter inserts a
+      line break, and the textarea grows vertically so all typed text stays visible.
     motivation: The notes capture the user's feedback for a later discussion with the spec curator
-      agent, and auto-save records the feedback without any explicit save action.
+      agent, and auto-save records the feedback without any explicit save action; multi-line entry
+      with a vertically growing field keeps longer feedback comfortable to write and fully visible.
     acceptance_criteria:
       - While the user is typing, a yellow pending indicator is shown to the right of the textarea.
-      - When the textarea loses focus, Enter is pressed, or 5 seconds of inactivity pass, the text
-        is saved to spec/spec_follow_up.yaml and the indicator becomes a green checkmark.
+      - When the textarea loses focus or 5 seconds of inactivity pass, the text is saved to
+        spec/spec_follow_up.yaml and the indicator becomes a green checkmark; pressing Enter inserts
+        a newline rather than saving, so the field can hold multi-line text.
       - If the user clears a textarea and the save fires, the corresponding field is removed from
         that item in spec/spec_follow_up.yaml, leaving an id-only item when every field is empty.
+      - The textarea grows vertically as text is entered, so all typed text, including line breaks,
+        is visible without scrolling.
     status: done
 
   - id: tooling_spec-manager_site_grouped-view
-    description: The page displays all specs sorted by id and grouped by their taxonomy, and each named
-      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it.
-    motivation: The taxonomy gives the user a navigable outline of the store, and collapsing keeps the
-      view manageable as the store grows.
+    description: The page displays all specs sorted by id and grouped by their taxonomy; each named
+      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it, and
+      each spec item can be collapsed by its id to show only the spec id with its details hidden.
+    motivation: The taxonomy gives the user a navigable outline of the store, and collapsing - by layer
+      or by individual spec - keeps the view manageable as the store grows.
     acceptance_criteria:
       - Spec ids are listed in ascending order by id.
       - Specs are grouped under their taxonomy path (area, component, section).
       - Collapsing a layer hides all spec ids under it, and expanding restores them.
+      - Collapsing a spec item by its id shows only the spec id with none of its details (status,
+        description, motivation, acceptance criteria, follow-up notes), and expanding restores the
+        details; spec items are expanded by default.
     status: done
 
   - id: tooling_spec-manager_site_launch
@@ -105,6 +116,8 @@ specs:
       - Selecting a status in the UI writes the new status into that spec's leaf spec.yaml file on
         disk.
       - After the change, both the on-disk file and the UI show the new status.
+      - The 'status' label and its radio group are placed directly under the spec id, aligned to the
+        left side of the item.
     status: done
 
   - id: tooling_spec-manager_site_uat
