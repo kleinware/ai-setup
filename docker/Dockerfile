@@ -1,7 +1,28 @@
+FROM oven/bun:1.3.14 AS opencode-build
+
+ARG OPENCODE_REPO=https://github.com/kleinware/opencode.git
+ARG OPENCODE_COMMIT=5d7c5a8173ebd1e6eda2f0c51d67166535054789
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git init /src/opencode \
+    && cd /src/opencode \
+    && git remote add origin "$OPENCODE_REPO" \
+    && git fetch --depth 1 origin "$OPENCODE_COMMIT" \
+    && git checkout --detach FETCH_HEAD
+
+WORKDIR /src/opencode
+RUN bun install --frozen-lockfile \
+    && cd packages/opencode \
+    && bun run script/build.ts --single \
+    && install -m 755 "dist/opencode-linux-$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')/bin/opencode" \
+       /usr/local/bin/opencode
+
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCODE_VERSION=1.18.31
 ARG LAZYGIT_VERSION=0.65.1
 ARG BUN_VERSION=1.4.2
 ARG PLAYWRIGHT_VERSION=1.63.0
@@ -54,8 +75,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# OpenCode
-RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+# OpenCode built from the pinned fork commit above
+COPY --from=opencode-build /usr/local/bin/opencode /usr/local/bin/opencode
 
 # Lazygit
 RUN LAZYGIT_ARCH="$(uname -m | sed -e 's/aarch64/arm64/')" \
