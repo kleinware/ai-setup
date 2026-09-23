@@ -10,7 +10,7 @@ specs:
       - A text query leaves only specs whose id, description, motivation, or any acceptance
         criterion contains the query text; matching is case-insensitive.
       - Multiple active filters apply together, and clearing a filter restores the full list.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_follow-up-file
     description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
@@ -25,7 +25,7 @@ specs:
       - Only id is required; description and motivation are optional strings, and
         acceptance_criteria is an optional object mapping numeric index keys to string values.
       - The items list is sorted by spec id.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_follow-up-notes
     description: Below each spec's description, motivation, and each acceptance criterion, a shadcn
@@ -40,7 +40,7 @@ specs:
         is saved to spec/spec_follow_up.yaml and the indicator becomes a green checkmark.
       - If the user clears a textarea and the save fires, the corresponding field is removed from
         that item in spec/spec_follow_up.yaml, leaving an id-only item when every field is empty.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_grouped-view
     description: The page displays all specs sorted by id and grouped by their taxonomy, and each named
@@ -51,7 +51,7 @@ specs:
       - Spec ids are listed in ascending order by id.
       - Specs are grouped under their taxonomy path (area, component, section).
       - Collapsing a layer hides all spec ids under it, and expanding restores them.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_launch
     description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
@@ -65,7 +65,7 @@ specs:
       - The server binds to 127.0.0.1 on port 8080, not to a network interface.
       - Running the script from a directory without a spec/ folder exits non-zero with an error
         message.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_live-data
     description: The site reads its data from the spec/ folder of the repo it was launched from (the
@@ -78,7 +78,7 @@ specs:
         spec/spec_follow_up.yaml where present.
       - Editing a spec file or spec/spec_follow_up.yaml on disk while the page is open updates the
         displayed data within a few seconds without a manual page reload.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_stack
     description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
@@ -92,7 +92,7 @@ specs:
         followed by bunx --bun shadcn@latest apply --preset b6ok544un2.
       - The site's app code lives inside the spec-manager skill directory, next to
         spec-manage-site.sh.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_status-edit
     description: Each spec is shown in its own shadcn item with its id, a status radio group, its
@@ -105,7 +105,7 @@ specs:
       - Selecting a status in the UI writes the new status into that spec's leaf spec.yaml file on
         disk.
       - After the change, both the on-disk file and the UI show the new status.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_uat
     description: "The site ships automated user acceptance tests (UAT) that run against a test repo: the
@@ -127,4 +127,4 @@ specs:
         text and items sorted by id.
       - The UAT is fully automated - no manual steps - and runs as part of the site's automated test
         suite.
-    status: pending
+    status: done
