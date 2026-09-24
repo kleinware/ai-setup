@@ -103,7 +103,7 @@ specs:
       - Running spec-manage-site.sh --port 3003 starts the site on 127.0.0.1:3003.
       - When the port is already in use and the server fails to start, the output includes a 'Tip:'
         line mentioning the --port flag.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_site_stack
     description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
