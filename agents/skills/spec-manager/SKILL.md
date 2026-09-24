@@ -1,6 +1,6 @@
 ---
 name: spec-manager
-description: Creates, updates, deletes, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.yaml files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, delete an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, or change the config (status or taxonomy). Never edit or parse spec files or the config by hand; use the skill CLI.
+description: Creates, updates, deletes, reads, searches, queries, and validates spec entries stored as YAML in per-leaf spec/*.spec.yaml files, and manages the repo config spec/.config.yaml (status and taxonomy) through the skill CLI. Use when asked to create a new spec, update an existing spec, delete an existing spec, read a spec by its ID, find specs that match a keyword, query the repo config (status, layers, taxonomy), query specs by status and/or layer, validate the spec store and config, change the config (status or taxonomy), or manage a spec's proposed change (`upsert change`, `merge change`). Never edit or parse spec files or the config by hand; use the skill CLI.
 ---
 
 # Spec Manager Skill
@@ -66,14 +66,24 @@ Every spec has exactly four fields, plus `status` when status is enabled, and an
 - `status` — required when status is enabled, one of the configured status names; forbidden when disabled
 - `meta` — optional; arbitrary non-null YAML data (a string, number, list, or mapping), stored after `status` at the bottom of the spec YAML. It is matched by `find` and returned whenever the spec is printed (`read`, `find`, `query tasks`)
 
-A spec's `meta` may contain a `change` key proposing a change. The object may contain only these keys:
+A spec's `meta` may contain a `change` key proposing a change to the spec — see "Proposing changes (`meta.change`)" for its schema, the `acceptance_criteria` update, remove, and add semantics, and the `pending`/`approved` `change_status` workflow.
 
-- `description` — non-empty string, a full replacement of the spec's description
-- `motivation` — non-empty string, a full replacement of the spec's motivation
-- `acceptance_criteria` — an object whose zero-based numeric string index keys (`"0"`, `"1"`, ...) map to a string that replaces that criterion or to `false` that deletes it, and whose `new1`, `new2`, ... keys map to strings appended to the end of the list in key order
-- `change_status` — `pending` or `approved`
+## Proposing changes (`meta.change`)
 
-`id`, `status`, and `meta` keys are not allowed inside it. `write` and `validate` reject change objects that violate this.
+A spec's `meta` may carry a `change` key: a proposed delta to apply on top of the spec's current fields. It only proposes — the spec's own fields stay unchanged until the change is merged (below). `write`, `upsert change`, `merge change`, and `validate` all reject change objects that violate this schema, failing with `schema-invalid`.
+
+The change object may contain only these delta fields:
+
+- `description` — non-empty string; a full replacement of the spec's description
+- `motivation` — non-empty string; a full replacement of the spec's motivation
+- `acceptance_criteria` — an object whose keys update, remove, or add criteria:
+  - a zero-based numeric string index key (`"0"`, `"1"`, ...) maps to a string that replaces the criterion at that index, or to `false`, which deletes that criterion;
+  - `new1`, `new2`, ... keys map to strings that are appended to the end of the criterion list, in key order.
+- `change_status` — `pending` or `approved`.
+
+No other keys are allowed inside it — `id`, `status`, and `meta` in particular.
+
+`change_status` gates when the change can be applied: a `pending` change is a proposal that is not yet eligible for implementation. A change with `change_status: approved` is eligible for implementation, and `merge change` will apply it; `merge change` refuses a spec whose `meta.change` is missing or whose `change_status` is not `approved`, failing with `change-not-approved`.
 
 ## ID format
 
@@ -112,8 +122,8 @@ bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 ```
 
 - `read` — prints the full spec YAML for `--id`. When the spec's `meta` has a `history` key it is omitted unless `--include-history` is passed; all other meta fields are always printed.
-- `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. A `--meta` containing a `change` key is validated against the change schema (see Schema) and fails with `schema-invalid` otherwise. Reports `action=create` or `action=update`.
-- `upsert change` — merges the passed `meta.change` fields into the spec's existing `meta.change`, creating `meta.change` when the spec has none. Takes `--id` and `--change <yaml>`: the passed top-level keys (`description`, `motivation`, `change_status`) overwrite the existing ones, and `acceptance_criteria` merges individual index and `new` keys into the existing `acceptance_criteria` object (unpassed keys are preserved). `change_status` is set to `pending` unless passed. The resulting `meta.change` is validated against the change schema (see Schema) and fails with `schema-invalid` otherwise; all other spec fields are untouched. Saves the spec to its leaf file atomically (still sorted by id) and reports `action=upsert-change`. Fails with `not-found` when no spec has that id.
+- `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. A `--meta` containing a `change` key is validated against the change schema (see Proposing changes (`meta.change`)) and fails with `schema-invalid` otherwise. Reports `action=create` or `action=update`.
+- `upsert change` — merges the passed `meta.change` fields into the spec's existing `meta.change`, creating `meta.change` when the spec has none. Takes `--id` and `--change <yaml>`: the passed top-level keys (`description`, `motivation`, `change_status`) overwrite the existing ones, and `acceptance_criteria` merges individual index and `new` keys into the existing `acceptance_criteria` object (unpassed keys are preserved). `change_status` is set to `pending` unless passed. The resulting `meta.change` is validated against the change schema (see Proposing changes (`meta.change`)) and fails with `schema-invalid` otherwise; all other spec fields are untouched. Saves the spec to its leaf file atomically (still sorted by id) and reports `action=upsert-change`. Fails with `not-found` when no spec has that id.
 - `merge change` — takes `--id` and `--final-spec <yaml>`: the final spec state, i.e. the change data applied on top of the existing spec. Refuses with `change-not-approved` (exit 1) unless the spec's `meta.change.change_status` is `approved`, with an error stating the change must be approved. Validates `--final-spec` against the spec schema (its `id` must match `--id`; a `meta.change`, when present, is validated against the change schema) and fails with `schema-invalid` otherwise. Records a copy of the pre-merge `meta.change` as the newest `meta.history` entry, an object with `diff` (previous history count + 1) and the change payload; `meta.history` stays a list of `{diff, change}` objects sorted descending by diff. Saves the given final spec state to the leaf file atomically (still sorted by id), reporting `action=merge-change` and `path=<leaf file name>`. Fails with `not-found` when no spec has that id.
 - `delete` — removes the spec with `--id` from its leaf file. The file is rewritten atomically with the remaining specs (still sorted by id), and the file is deleted when the removed spec was its last entry. Fails with `not-found` when no spec has that id.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, status (when enabled), and meta (when present), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings, plus `meta` when present. A `meta.history` key is omitted unless `--include-history` is passed; all other meta fields are always printed.
@@ -180,6 +190,16 @@ The first stdout line is always a single key=value status line; exit 0 = success
 4. Run `write` with all fields as CLI arguments, plus `--status` when status is enabled and `--meta` when the spec carries attached data.
 5. Verify with `read` and `validate`.
 6. Check the size of the leaf file that now holds the spec. If the leaf group is getting too big, follow "Refactoring a leaf" below before considering the work done.
+
+## Changing a spec (workflow)
+
+Change a spec in three steps — propose it, approve it, then merge it:
+
+1. **Propose (pending)** — record the proposed delta with `upsert change --id <id> --change <yaml>` (a `write` with a `--meta` carrying the `change` key works too). `change_status` is set to `pending` unless you pass one, so a proposal starts `pending`. Re-running `upsert change` refines the proposal: passed keys overwrite the existing ones, and unpassed `acceptance_criteria` keys are preserved.
+2. **Approve** — once the proposal is accepted, set it to approved with `upsert change --id <id> --change 'change_status: approved'` (no other keys needed). Only a change with `change_status: approved` is eligible for implementation; a `pending` change is not.
+3. **Merge** — to implement the approved change, apply the delta on top of the existing spec to build the final spec state, and save it with `merge change --id <id> --final-spec <yaml>`. `merge change` refuses with `change-not-approved` unless the spec's `meta.change.change_status` is `approved`. On success it saves the final spec state and records a copy of the applied `meta.change` as the newest `meta.history` entry (`diff` = previous history count + 1; the list stays sorted descending by diff).
+
+`read`, `find`, and `query tasks` omit `meta.history` by default — pass `--include-history` to see previously merged changes.
 
 ## Refactoring a leaf (when a leaf group gets too big)
 

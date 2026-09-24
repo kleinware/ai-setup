@@ -1232,3 +1232,60 @@ describe("[merge-change] round trip", () => {
     }
   });
 });
+
+const SKILL_MD = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
+
+function mdSection(title: string): string {
+  const marker = `## ${title}`;
+  const start = SKILL_MD.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const rest = SKILL_MD.slice(start + marker.length);
+  const next = rest.indexOf("\n## ");
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+describe("[skill-md-change-docs] tooling_spec-manager_change_skill-md-change-docs: SKILL.md documents the change workflow", () => {
+  it("schema section: documents the meta.change delta fields and pending/approved change_status", () => {
+    const sec = mdSection("Proposing changes (`meta.change`)");
+    expect(sec).toMatch(/description/);
+    expect(sec).toMatch(/motivation/);
+    expect(sec).toMatch(/acceptance_criteria/);
+    expect(sec).toMatch(/change_status/);
+    expect(sec).toMatch(/pending/);
+    expect(sec).toMatch(/approved/);
+  });
+
+  it("schema section: documents the acceptance_criteria update (index replace), remove (false), and add (new-key append) semantics", () => {
+    const sec = mdSection("Proposing changes (`meta.change`)");
+    expect(sec).toMatch(/"0"/);
+    expect(sec).toMatch(/replaces the criterion at that index/);
+    expect(sec).toMatch(/`false`/);
+    expect(sec).toMatch(/deletes that criterion/);
+    expect(sec).toMatch(/new1/);
+    expect(sec).toMatch(/new2/);
+    expect(sec).toMatch(/appended to the end of the criterion list/);
+  });
+
+  it("documents the upsert change and merge change actions, including the approved requirement and the meta.history recording", () => {
+    const actions = mdSection("Actions");
+    expect(actions).toMatch(/upsert change/);
+    expect(actions).toMatch(/merge change/);
+    expect(actions).toMatch(/change-not-approved/);
+    expect(actions).toMatch(/meta\.history/);
+    expect(actions).toMatch(/pre-merge `meta\.change`/);
+  });
+
+  it("documents the pending -> approved -> merge workflow and that approved changes are eligible for implementation", () => {
+    const wf = mdSection("Changing a spec (workflow)");
+    expect(wf).toMatch(/pending/);
+    expect(wf).toMatch(/approved/);
+    expect(wf).toMatch(/upsert change/);
+    expect(wf).toMatch(/merge change/);
+    expect(wf).toMatch(/eligible for implementation/);
+    expect(wf).toMatch(/meta\.history/);
+  });
+
+  it("states that changes with change_status approved are eligible for implementation", () => {
+    expect(SKILL_MD).toMatch(/change_status: approved`? is eligible for implementation/);
+  });
+});

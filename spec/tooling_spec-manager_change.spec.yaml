@@ -88,7 +88,7 @@ specs:
       - SKILL.md documents the upsert change and merge change actions, including that merge requires
         change_status approved and records the applied change in meta.history.
       - SKILL.md states that changes with change_status approved are eligible for implementation.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_change_upsert-change
     description: The CLI provides an upsert change action that takes a spec id (--id) and the
