@@ -99,6 +99,7 @@ Run from anywhere in the repo; the script resolves the repo root itself. Any act
 bash <skill-dir>/spec.sh read --id <id> ["--include-history"]
 bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <name>] [--meta <yaml>]
 bash <skill-dir>/spec.sh upsert change --id <id> --change <yaml>
+bash <skill-dir>/spec.sh merge change --id <id> --final-spec <yaml>
 bash <skill-dir>/spec.sh delete --id <id>
 bash <skill-dir>/spec.sh find --query <keyword> ["--include-history"]
 bash <skill-dir>/spec.sh query config
@@ -113,6 +114,7 @@ bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 - `read` — prints the full spec YAML for `--id`. When the spec's `meta` has a `history` key it is omitted unless `--include-history` is passed; all other meta fields are always printed.
 - `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. A `--meta` containing a `change` key is validated against the change schema (see Schema) and fails with `schema-invalid` otherwise. Reports `action=create` or `action=update`.
 - `upsert change` — merges the passed `meta.change` fields into the spec's existing `meta.change`, creating `meta.change` when the spec has none. Takes `--id` and `--change <yaml>`: the passed top-level keys (`description`, `motivation`, `change_status`) overwrite the existing ones, and `acceptance_criteria` merges individual index and `new` keys into the existing `acceptance_criteria` object (unpassed keys are preserved). `change_status` is set to `pending` unless passed. The resulting `meta.change` is validated against the change schema (see Schema) and fails with `schema-invalid` otherwise; all other spec fields are untouched. Saves the spec to its leaf file atomically (still sorted by id) and reports `action=upsert-change`. Fails with `not-found` when no spec has that id.
+- `merge change` — takes `--id` and `--final-spec <yaml>`: the final spec state, i.e. the change data applied on top of the existing spec. Refuses with `change-not-approved` (exit 1) unless the spec's `meta.change.change_status` is `approved`, with an error stating the change must be approved. Validates `--final-spec` against the spec schema (its `id` must match `--id`; a `meta.change`, when present, is validated against the change schema) and fails with `schema-invalid` otherwise. Records a copy of the pre-merge `meta.change` as the newest `meta.history` entry, an object with `diff` (previous history count + 1) and the change payload; `meta.history` stays a list of `{diff, change}` objects sorted descending by diff. Saves the given final spec state to the leaf file atomically (still sorted by id), reporting `action=merge-change` and `path=<leaf file name>`. Fails with `not-found` when no spec has that id.
 - `delete` — removes the spec with `--id` from its leaf file. The file is rewritten atomically with the remaining specs (still sorted by id), and the file is deleted when the removed spec was its last entry. Fails with `not-found` when no spec has that id.
 - `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, status (when enabled), and meta (when present), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings, plus `meta` when present. A `meta.history` key is omitted unless `--include-history` is passed; all other meta fields are always printed.
 - `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of `{name, description}` objects), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
@@ -129,10 +131,11 @@ After any `config` change, run `validate`: a declared term without specs, or a s
 
 The first stdout line is always a single key=value status line; exit 0 = success, 1 = failure, 2 = usage error.
 
-- Success: `status=success action=<read|create|update|upsert-change|delete|find|query-config|query-tasks|validate|config-get|config-set|config-add|config-remove> ...`
+- Success: `status=success action=<read|create|update|upsert-change|merge-change|delete|find|query-config|query-tasks|validate|config-get|config-set|config-add|config-remove> ...`
   - `read`: the spec YAML follows after a blank line.
   - `write`: `path=<leaf file name>` names the file the spec was written to.
   - `upsert-change`: `path=<leaf file name>` names the file the spec was written to.
+  - `merge-change`: `path=<leaf file name>` names the file the spec was written to.
   - `delete`: `path=<leaf file name>` names the file the spec was removed from; the file is deleted when the removed spec was its last entry.
   - `find`: a YAML list of `id`/`description` mappings (plus `meta` when present) follows after a blank line.
   - `query-config`: the normalized config YAML follows after a blank line, or `file=missing` with no YAML.
@@ -145,7 +148,8 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `yaml-error` — a spec file, the config, or a `--meta` value is not valid YAML
   - `config-invalid` — `spec/.config.yaml` (or the result of a `config` change) violates the skill's `.config.schema.json`
   - `config-missing` — `spec/.config.yaml` does not exist (for `config add` or `config remove`)
-  - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), a null `--meta` (write), a `meta.change` that violates the change schema (write, upsert change, and validate), or a spec field violation (validate)
+  - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), a null `--meta` (write), a `meta.change` that violates the change schema (write, upsert change, and validate), a `--final-spec` that violates the spec schema (merge change), or a spec field violation (validate)
+  - `change-not-approved` — merge change of a spec whose `meta.change` is missing or whose `meta.change.change_status` is not `approved`
   - `status-invalid` — `--status` missing, unknown, or passed while status is disabled
   - `taxonomy-unknown` — a layer term is not declared in the config taxonomy structure
   - `layer-invalid` — `--layer` passed while `taxonomy.layers` is `false`, or a layer path with the wrong number of terms

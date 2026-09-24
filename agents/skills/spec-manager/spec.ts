@@ -7,6 +7,7 @@
 //     write    --id <id> --description <text> --motivation <text> \
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>] [--meta <yaml>]
 //     upsert   change --id <id> --change <yaml>
+//     merge    change --id <id> --final-spec <yaml>
 //     delete   --id <id>
 //     find     --query <string> [--include-history]
 //     query    config
@@ -59,6 +60,7 @@ Actions:
   read     --id <id>
    write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>] [--meta <yaml>]
    upsert   change --id <id> --change <yaml>
+   merge    change --id <id> --final-spec <yaml>
    delete   --id <id>
    find     --query <string>
    query    config
@@ -76,6 +78,7 @@ const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id", "include-history"],
   write: ["id", "description", "motivation", "acceptance-criteria", "status", "meta"],
   upsert: ["id", "change"],
+  merge: ["id", "final-spec"],
   delete: ["id"],
   find: ["query", "include-history"],
   query: ["status", "layer", "include-history"],
@@ -95,6 +98,7 @@ const REQUIRED_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria"],
   upsert: ["id", "change"],
+  merge: ["id", "final-spec"],
   delete: ["id"],
   find: ["query"],
   query: [],
@@ -108,6 +112,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   config: CONFIG_SUBCOMMANDS,
   query: QUERY_SUBCOMMANDS,
   upsert: ["change"],
+  merge: ["change"],
 };
 
 function kv(v: unknown): string {
@@ -834,6 +839,132 @@ function doUpsert(args: Args, specDir: string, cfg: Config): number {
   return 0;
 }
 
+function doMerge(args: Args, specDir: string, cfg: Config): number {
+  const id = args.id as string;
+  if (!idRegex(cfg.layers).test(id)) {
+    fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
+  }
+  let finalSpec: unknown;
+  try {
+    finalSpec = parse(args["final-spec"] as string);
+  } catch (e) {
+    fail("yaml-error", { id, file: "final-spec", error: errLine(e) });
+  }
+  if (typeof finalSpec !== "object" || finalSpec === null || Array.isArray(finalSpec)) {
+    fail("schema-invalid", { id }, ["--final-spec must be a YAML mapping"]);
+  }
+  const final = finalSpec as Record<string, unknown>;
+  const store = loadStore(specDir);
+  if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB, id }, store.detail));
+  let file: string | null = null;
+  let spec: Record<string, unknown> | null = null;
+  for (const [name, specs] of Object.entries(store.files)) {
+    const found = specs.find((s) => s.id === id);
+    if (found) {
+      file = name;
+      spec = found;
+      break;
+    }
+  }
+  if (file === null || spec === null) {
+    const known = Object.values(store.files)
+      .flat()
+      .map((s) => String(s.id))
+      .join(",");
+    fail("not-found", { id, known });
+  }
+  const meta = (spec as Record<string, unknown>).meta;
+  const metaIsMapping = typeof meta === "object" && meta !== null && !Array.isArray(meta);
+  const preChange = metaIsMapping ? (meta as Record<string, unknown>).change : undefined;
+  if (typeof preChange !== "object" || preChange === null || Array.isArray(preChange)) {
+    fail("change-not-approved", { id }, ["the change must be approved: the spec has no meta.change"]);
+  }
+  const preChangeMap = preChange as Record<string, unknown>;
+  if (preChangeMap.change_status !== "approved") {
+    fail("change-not-approved", { id }, [
+      `the change must be approved: meta.change.change_status is '${String(preChangeMap.change_status)}'`,
+    ]);
+  }
+  const problems: string[] = [];
+  const fid = final.id;
+  if (typeof fid !== "string" || !fid) {
+    problems.push("--final-spec must include the spec id");
+  } else if (fid !== id) {
+    problems.push(`--final-spec id '${fid}' must match --id '${id}'`);
+  }
+  const allowed = new Set<string>(["id", "description", "motivation", "acceptance_criteria", "meta"]);
+  if (cfg.statusEnabled) allowed.add("status");
+  for (const key of Object.keys(final)) {
+    if (!allowed.has(key)) problems.push(`unknown field '${key}'`);
+  }
+  if (typeof final.description !== "string" || !final.description.trim()) {
+    problems.push("description must be a non-empty string");
+  }
+  if (typeof final.motivation !== "string" || !final.motivation.trim()) {
+    problems.push("motivation must be a non-empty string");
+  }
+  const ac = final.acceptance_criteria;
+  const acOk =
+    typeof ac === "string"
+      ? ac.trim() !== ""
+      : Array.isArray(ac) && ac.length > 0 && ac.every((c) => typeof c === "string" && c.trim() !== "");
+  if (!acOk) {
+    problems.push("acceptance_criteria must be a non-empty string or a list of non-empty strings");
+  }
+  if (cfg.statusEnabled) {
+    const st = final.status;
+    if (typeof st !== "string" || !cfg.states.includes(st)) {
+      problems.push(`status must be one of: ${cfg.states.join(", ")}`);
+    }
+  } else if ("status" in final) {
+    problems.push(`status is not allowed because status is disabled in ${CONFIG_FILE}`);
+  }
+  const finalMeta = final.meta;
+  if ("meta" in final && finalMeta === null) {
+    problems.push("meta must not be null");
+  } else if (
+    typeof finalMeta === "object" &&
+    finalMeta !== null &&
+    !Array.isArray(finalMeta) &&
+    "change" in (finalMeta as Record<string, unknown>)
+  ) {
+    problems.push(...changeProblems((finalMeta as Record<string, unknown>).change, id));
+  }
+  if (problems.length) fail("schema-invalid", { id }, problems);
+  const prevHistory: unknown[] =
+    metaIsMapping && Array.isArray((meta as Record<string, unknown>).history)
+      ? ((meta as Record<string, unknown>).history as unknown[])
+      : [];
+  const newEntry: Record<string, unknown> = {
+    diff: prevHistory.length + 1,
+    change: structuredClone(preChangeMap),
+  };
+  const newMeta: Record<string, unknown> =
+    typeof finalMeta === "object" && finalMeta !== null && !Array.isArray(finalMeta)
+      ? { ...(finalMeta as Record<string, unknown>) }
+      : {};
+  newMeta.history = [newEntry, ...prevHistory];
+  const newSpec: Record<string, unknown> = {
+    id,
+    description: final.description,
+    motivation: final.motivation,
+    acceptance_criteria: final.acceptance_criteria,
+  };
+  if ("status" in final) newSpec.status = final.status;
+  newSpec.meta = newMeta;
+  const specs = (store.files[file as string].filter((s) => s.id !== id) as Record<string, unknown>[])
+    .concat([newSpec]);
+  specs.sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
+  const filePath = path.join(specDir, file as string);
+  try {
+    writeFile(filePath, specs);
+  } catch (e) {
+    fail("io-error", { file: file as string, error: errLine(e) });
+  }
+  console.log(`status=success action=merge-change id=${id} path=${file}`);
+  return 0;
+}
+
 function doDelete(args: Args, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
@@ -1246,6 +1377,8 @@ function main(argv: string[]): number {
       return doWrite(opts, specDir, cfg);
     case "upsert":
       return doUpsert(opts, specDir, cfg);
+    case "merge":
+      return doMerge(opts, specDir, cfg);
     case "delete":
       return doDelete(opts, specDir, cfg);
     case "find":

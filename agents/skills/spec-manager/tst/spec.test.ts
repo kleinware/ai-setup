@@ -873,6 +873,91 @@ const cases: Case[] = [
       expectCode: 1,
       expectContains: ["reason=not-found"],
     },
+    {
+      name: "[merge-change] merge of a pending change fails with change-not-approved",
+      fix: "h-change-output",
+      args: [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: merged description\nmotivation: merged motivation\nacceptance_criteria: [merged criterion]\nstatus: done",
+      ],
+      expectCode: 1,
+      expectContains: ["reason=change-not-approved", "must be approved"],
+      expectFile: {
+        name: "a_b_c.spec.yaml",
+        contains: ["change_status: pending", "applied 2026-01-01"],
+      },
+    },
+    {
+      name: "[merge-change] merge of a spec with no meta.change fails with change-not-approved",
+      fix: "h-write-update",
+      args: [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: merged description\nmotivation: merged motivation\nacceptance_criteria: [merged criterion]\nstatus: done",
+      ],
+      expectCode: 1,
+      expectContains: ["reason=change-not-approved", "must be approved", "no meta.change"],
+    },
+    {
+      name: "[merge-change] approved merge succeeds and saves the final spec state",
+      fix: "h-merge-approved",
+      args: [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: merged description\nmotivation: merged motivation\nacceptance_criteria:\n- merged criterion one\n- merged criterion two\nstatus: done",
+      ],
+      expectCode: 0,
+      expectContains: ["action=merge-change", "a_b_c_one", "path=a_b_c.spec.yaml"],
+      expectFile: {
+        name: "a_b_c.spec.yaml",
+        contains: [
+          "description: merged description",
+          "motivation: merged motivation",
+          "merged criterion one",
+          "merged criterion two",
+          "history:",
+          "diff: 1",
+          "change_status: approved",
+          "revised criterion",
+        ],
+        notContains: ["first spec", "because we need it", "works correctly", "runs fast"],
+      },
+    },
+    {
+      name: "[merge-change] merge of an unknown id fails with not-found",
+      fix: "s-read-missing",
+      args: [
+        "merge", "change", "--id", "a_b_c_missing", "--final-spec",
+        "id: a_b_c_missing\ndescription: d\nmotivation: m\nacceptance_criteria: [ok]",
+      ],
+      expectCode: 1,
+      expectContains: ["reason=not-found"],
+    },
+    {
+      name: "[merge-change] final-spec with a mismatched id fails with schema-invalid",
+      fix: "h-merge-approved",
+      args: [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_two\ndescription: d\nmotivation: m\nacceptance_criteria: [ok]\nstatus: done",
+      ],
+      expectCode: 1,
+      expectContains: ["reason=schema-invalid", "must match --id"],
+    },
+    {
+      name: "[merge-change] final-spec with an empty description fails with schema-invalid",
+      fix: "h-merge-approved",
+      args: [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        'id: a_b_c_one\ndescription: ""\nmotivation: m\nacceptance_criteria: [ok]\nstatus: done',
+      ],
+      expectCode: 1,
+      expectContains: ["reason=schema-invalid", "description must be a non-empty string"],
+    },
+    {
+      name: "[merge-change] final-spec that is not a mapping fails with schema-invalid",
+      fix: "h-merge-approved",
+      args: ["merge", "change", "--id", "a_b_c_one", "--final-spec", "just a string"],
+      expectCode: 1,
+      expectContains: ["reason=schema-invalid", "must be a YAML mapping"],
+    },
   ];
 
 describe("spec-manager CLI", () => {
@@ -1052,6 +1137,96 @@ describe("[upsert-change] round trip", () => {
       const v = runIn(dir, ["validate"]);
       expect(v.code).toBe(0);
       expect(v.out).toContain("status=success");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("[merge-change] round trip", () => {
+  it("history entry is a copy of the pre-merge change with diff = previous history count + 1", () => {
+    const dir = freshDir("h-merge-approved");
+    try {
+      const m = runIn(dir, [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: merged description\nmotivation: merged motivation\nacceptance_criteria:\n- merged criterion one\n- merged criterion two\nstatus: done",
+      ]);
+      expect(m.code).toBe(0);
+      expect(m.out).toContain("action=merge-change");
+      const spec = loadLeaf(dir, "a_b_c_one");
+      expect(spec.meta).toEqual({
+        history: [
+          {
+            diff: 1,
+            change: {
+              change_status: "approved",
+              description: "updated description",
+              motivation: "updated motivation",
+              acceptance_criteria: { "0": "revised criterion", "1": false, new1: "appended criterion" },
+            },
+          },
+        ],
+      });
+      expect(spec.id).toBe("a_b_c_one");
+      expect(spec.description).toBe("merged description");
+      expect(spec.motivation).toBe("merged motivation");
+      expect(spec.acceptance_criteria).toEqual(["merged criterion one", "merged criterion two"]);
+      expect(spec.status).toBe("done");
+      const v = runIn(dir, ["validate"]);
+      expect(v.code).toBe(0);
+      expect(v.out).toContain("status=success");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("prior history entry gets diff 2 and final-spec meta keys are kept", () => {
+    const dir = freshDir("h-merge-history");
+    try {
+      const m = runIn(dir, [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: merged description\nmotivation: merged motivation\nacceptance_criteria: [merged criterion]\nstatus: done\nmeta:\n  notes: keep me",
+      ]);
+      expect(m.code).toBe(0);
+      const spec = loadLeaf(dir, "a_b_c_one");
+      const meta = spec.meta as Record<string, unknown>;
+      expect(meta.history).toEqual([
+        { diff: 2, change: { change_status: "approved", description: "updated description" } },
+        { diff: 1, change: { change_status: "approved", description: "original update" } },
+      ]);
+      expect(meta.notes).toBe("keep me");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("two consecutive merges keep history sorted descending by diff", () => {
+    const dir = freshDir("h-merge-approved");
+    try {
+      const m1 = runIn(dir, [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: first merge\nmotivation: first merge motivation\nacceptance_criteria: [c1]\nstatus: done",
+      ]);
+      expect(m1.code).toBe(0);
+      const u = runIn(dir, [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        "change_status: approved\ndescription: second change description",
+      ]);
+      expect(u.code).toBe(0);
+      const m2 = runIn(dir, [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: second merge\nmotivation: second merge motivation\nacceptance_criteria: [c1, c2]\nstatus: done",
+      ]);
+      expect(m2.code).toBe(0);
+      const spec = loadLeaf(dir, "a_b_c_one");
+      const meta = spec.meta as Record<string, unknown>;
+      const history = meta.history as Record<string, unknown>[];
+      expect(history[0].diff).toBe(2);
+      expect(history[1].diff).toBe(1);
+      expect(history[0].change).toEqual({ change_status: "approved", description: "second change description" });
+      expect((history[1].change as Record<string, unknown>).description).toBe("updated description");
+      expect(spec.description).toBe("second merge");
+      expect(spec.acceptance_criteria).toEqual(["c1", "c2"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,0 +1,18 @@
+specs:
+- id: a_b_c_one
+  description: first spec
+  motivation: because we need it
+  acceptance_criteria:
+  - works correctly
+  - runs fast
+  status: done
+  meta:
+    change:
+      change_status: approved
+      description: updated description
+    notes: keep me
+    history:
+    - diff: 1
+      change:
+        change_status: approved
+        description: original update

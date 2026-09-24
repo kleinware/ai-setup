@@ -20,7 +20,7 @@ specs:
       - "meta.history is a list of objects each with a diff and the change payload, sorted
         descending by diff: after two applied changes the front entry is diff 2 and the last entry
         is diff 1."
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_change_meta-change-schema
     description: "A spec's meta may carry a change key holding a proposed change to the spec: the same
