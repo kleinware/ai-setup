@@ -3,13 +3,13 @@
 //
 // Usage:
 //   spec.sh [--spec-dir <dir>] <action> [flags]
-//     read     --id <id>
+//     read     --id <id> [--include-history]
 //     write    --id <id> --description <text> --motivation <text> \
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>] [--meta <yaml>]
 //     delete   --id <id>
-//     find     --query <string>
+//     find     --query <string> [--include-history]
 //     query    config
-//              tasks [--status <name>] [--layer <path> ...]
+//              tasks [--status <name>] [--layer <path> ...] [--include-history]
 //     validate
 //     config   get
 //              set [--status <name>:<description> ...] [--layers <layer> ...] [--structure <yaml>]
@@ -71,14 +71,22 @@ Flags:
   --spec-dir <dir>  directory containing the *.spec.yaml files and .config.yaml (default: <repo-root>/spec)`;
 
 const KNOWN_FLAGS: Record<string, string[]> = {
-  read: ["id"],
+  read: ["id", "include-history"],
   write: ["id", "description", "motivation", "acceptance-criteria", "status", "meta"],
   delete: ["id"],
-  find: ["query"],
-  query: ["status", "layer"],
+  find: ["query", "include-history"],
+  query: ["status", "layer", "include-history"],
   validate: [],
   config: ["status", "layers", "structure", "term", "parent"],
 };
+
+const BOOLEAN_FLAGS: Record<string, string[]> = {
+  read: ["include-history"],
+  find: ["include-history"],
+  query: ["include-history"],
+};
+
+type Args = Record<string, string | string[] | boolean>;
 
 const REQUIRED_FLAGS: Record<string, string[]> = {
   read: ["id"],
@@ -149,7 +157,7 @@ function withDetail(extra: Record<string, unknown>, detail: string | null): Reco
 function parseArgs(argv: string[]): {
   action: string;
   sub: string | null;
-  opts: Record<string, string | string[]>;
+  opts: Args;
 } {
   const action = argv[0];
   if (!action || !(action in KNOWN_FLAGS)) usage();
@@ -161,12 +169,16 @@ function parseArgs(argv: string[]): {
     rest = rest.slice(1);
   }
   const allowed = new Set(KNOWN_FLAGS[action]);
-  const opts: Record<string, string | string[]> = {};
+  const opts: Args = {};
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i];
     if (!token.startsWith("--")) usage();
     const key = token.slice(2);
     if (!allowed.has(key)) usage();
+    if (BOOLEAN_FLAGS[action]?.includes(key)) {
+      opts[key] = true;
+      continue;
+    }
     if (i + 1 >= rest.length) usage();
     if (key === "acceptance-criteria" || (action === "config" && (key === "status" || key === "layers"))) {
       const values: string[] = [rest[++i]];
@@ -439,6 +451,66 @@ function writeConfig(configPath: string, data: Record<string, unknown>): void {
   }
 }
 
+function metaForOutput(meta: unknown, includeHistory: boolean): unknown {
+  if (typeof meta === "object" && meta !== null && !Array.isArray(meta)) {
+    const m = meta as Record<string, unknown>;
+    if ("history" in m && !includeHistory) {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(m)) {
+        if (k !== "history") out[k] = v;
+      }
+      return out;
+    }
+  }
+  return meta;
+}
+
+function changeProblems(change: unknown, id: string): string[] {
+  const problems: string[] = [];
+  const pre = `${id}: meta.change`;
+  if (typeof change !== "object" || change === null || Array.isArray(change)) {
+    problems.push(`${pre} must be a mapping`);
+    return problems;
+  }
+  const allowed = new Set<string>(["description", "motivation", "acceptance_criteria", "change_status"]);
+  for (const key of Object.keys(change)) {
+    if (!allowed.has(key)) problems.push(`${pre} key '${key}' is not allowed`);
+  }
+  const cs = (change as Record<string, unknown>).change_status;
+  if (cs === undefined) {
+    problems.push(`${pre}.change_status is required and must be 'pending' or 'approved'`);
+  } else if (cs !== "pending" && cs !== "approved") {
+    problems.push(`${pre}.change_status must be 'pending' or 'approved'`);
+  }
+  for (const key of ["description", "motivation"]) {
+    const v = (change as Record<string, unknown>)[key];
+    if (v !== undefined && (typeof v !== "string" || !v.trim())) {
+      problems.push(`${pre}.${key} must be a non-empty string`);
+    }
+  }
+  const ac = (change as Record<string, unknown>).acceptance_criteria;
+  if (ac !== undefined) {
+    if (typeof ac !== "object" || ac === null || Array.isArray(ac)) {
+      problems.push(`${pre}.acceptance_criteria must be a mapping`);
+    } else {
+      for (const [key, value] of Object.entries(ac as Record<string, unknown>)) {
+        if (/^\d+$/.test(key)) {
+          if (!(value === false || typeof value === "string")) {
+            problems.push(`${pre}.acceptance_criteria['${key}'] must map to a string or false`);
+          }
+        } else if (/^new\d+$/.test(key)) {
+          if (typeof value !== "string") {
+            problems.push(`${pre}.acceptance_criteria['${key}'] must map to a string`);
+          }
+        } else {
+          problems.push(`${pre}.acceptance_criteria key '${key}' must be a numeric index (0, 1, 2, ...) or new1, new2, ...`);
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 function specText(spec: Record<string, unknown>): string {
   const parts: string[] = [
     String(spec.id ?? ""),
@@ -487,6 +559,13 @@ function specProblems(spec: Record<string, unknown>, cfg: Config): string[] {
   }
   if ("meta" in spec && spec.meta === null) {
     problems.push(`${id}: meta must not be null`);
+  } else if (
+    typeof spec.meta === "object" &&
+    spec.meta !== null &&
+    !Array.isArray(spec.meta) &&
+    "change" in (spec.meta as Record<string, unknown>)
+  ) {
+    problems.push(...changeProblems((spec.meta as Record<string, unknown>).change, id));
   }
   if (!idRegex(cfg.layers).test(id)) {
     problems.push(`${id}: id does not match ${idPattern(cfg.layers)}`);
@@ -550,8 +629,9 @@ function coverageProblems(specs: Record<string, unknown>[], cfg: Config): string
   return problems;
 }
 
-function doRead(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+function doRead(args: Args, specDir: string, cfg: Config): number {
   const id = args.id as string;
+  const includeHistory = args["include-history"] === true;
   if (!idRegex(cfg.layers).test(id)) {
     fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
   }
@@ -562,7 +642,11 @@ function doRead(args: Record<string, string | string[]>, specDir: string, cfg: C
       if (spec.id === id) {
         console.log(`status=success action=read id=${id}`);
         console.log("");
-        console.log(stringify(spec, { lineWidth: 100 }));
+        const out: Record<string, unknown> = { ...spec };
+        if (spec.meta !== null && spec.meta !== undefined) {
+          out.meta = metaForOutput(spec.meta, includeHistory);
+        }
+        console.log(stringify(out, { lineWidth: 100 }));
         return 0;
       }
     }
@@ -574,7 +658,7 @@ function doRead(args: Record<string, string | string[]>, specDir: string, cfg: C
   fail("not-found", { id, known });
 }
 
-function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+function doWrite(args: Args, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
     fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
@@ -611,6 +695,10 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
     }
     if (meta === null) {
       fail("schema-invalid", { id }, ["--meta must be a non-null YAML value"]);
+    }
+    if (typeof meta === "object" && meta !== null && !Array.isArray(meta) && "change" in (meta as Record<string, unknown>)) {
+      const cp = changeProblems((meta as Record<string, unknown>).change, id);
+      if (cp.length) fail("schema-invalid", { id }, cp);
     }
   }
   const spec: Record<string, unknown> = {
@@ -652,7 +740,7 @@ function doWrite(args: Record<string, string | string[]>, specDir: string, cfg: 
   return 0;
 }
 
-function doDelete(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+function doDelete(args: Args, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
     fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
@@ -689,8 +777,9 @@ function doDelete(args: Record<string, string | string[]>, specDir: string, cfg:
   return 0;
 }
 
-function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: Config): number {
+function doFind(args: Args, specDir: string, _cfg: Config): number {
   const query = args.query as string;
+  const includeHistory = args["include-history"] === true;
   const store = loadStore(specDir);
   if (store.error && store.error !== "spec-file-missing") {
     fail(store.error, withDetail({ file: "spec/" + STORE_GLOB }, store.detail));
@@ -700,7 +789,7 @@ function doFind(args: Record<string, string | string[]>, specDir: string, _cfg: 
     .filter((s) => specText(s).toLowerCase().includes(query.toLowerCase()))
     .map((s) => {
       const m: Record<string, unknown> = { id: s.id, description: s.description };
-      if (s.meta !== null && s.meta !== undefined) m.meta = s.meta;
+      if (s.meta !== null && s.meta !== undefined) m.meta = metaForOutput(s.meta, includeHistory);
       return m;
     });
   console.log(`status=success action=find query=${kv(query)} count=${matches.length}`);
@@ -730,7 +819,8 @@ function doQueryConfig(specDir: string): number {
   return 0;
 }
 
-function doQueryTasks(args: Record<string, string | string[]>, specDir: string, cfg: Config): number {
+function doQueryTasks(args: Args, specDir: string, cfg: Config): number {
+  const includeHistory = args["include-history"] === true;
   const status = args.status as string | undefined;
   const layerPaths = args.layer as string[] | undefined;
   if (status === undefined && (!layerPaths || layerPaths.length === 0)) usage();
@@ -799,7 +889,7 @@ function doQueryTasks(args: Record<string, string | string[]>, specDir: string, 
   const results = matches.map((s) => {
     const m: Record<string, unknown> = { id: s.id, description: s.description };
     if (cfg.statusEnabled) m.status = s.status;
-    if (s.meta !== null && s.meta !== undefined) m.meta = s.meta;
+    if (s.meta !== null && s.meta !== undefined) m.meta = metaForOutput(s.meta, includeHistory);
     return m;
   });
   const line =
@@ -857,7 +947,7 @@ function doValidate(specDir: string, cfg: Config): number {
   return 0;
 }
 
-function doConfigSet(args: Record<string, string | string[]>, specDir: string): number {
+function doConfigSet(args: Args, specDir: string): number {
   const configPath = path.join(specDir, ".config.yaml");
   const hasStatus = args.status !== undefined;
   const hasLayers = args.layers !== undefined;
@@ -922,7 +1012,7 @@ function doConfigSet(args: Record<string, string | string[]>, specDir: string): 
 }
 
 function doConfig(
-  args: Record<string, string | string[]>,
+  args: Args,
   sub: string,
   specDir: string,
   cfg: Config,

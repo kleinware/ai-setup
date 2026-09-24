@@ -40,7 +40,7 @@ specs:
         to strings appended to the end of the list in key order.
       - description and motivation, when present, are non-empty strings that completely replace the
         spec's corresponding fields.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_change_meta-change-validation
     description: "write and validate enforce the meta.change schema: a change key with a disallowed key
@@ -59,7 +59,7 @@ specs:
       - validate reports specs whose meta.change violates the change schema.
       - A spec whose meta contains keys other than change (e.g. a meta.notes string) validates
         successfully.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_change_query-change-output
     description: read, find, and query tasks include a spec's meta in their output — including
@@ -72,7 +72,7 @@ specs:
       - read, find, and query tasks omit meta.history from the output by default.
       - Passing --include-history to read, find, or query tasks includes meta.history in the output.
       - Other meta fields (e.g. a meta.notes string) are printed with and without --include-history.
-    status: pending
+    status: done
 
   - id: tooling_spec-manager_change_skill-md-change-docs
     description: SKILL.md documents the meta.change schema (the delta fields, the acceptance_criteria

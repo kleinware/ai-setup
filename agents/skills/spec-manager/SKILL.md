@@ -66,6 +66,15 @@ Every spec has exactly four fields, plus `status` when status is enabled, and an
 - `status` — required when status is enabled, one of the configured status names; forbidden when disabled
 - `meta` — optional; arbitrary non-null YAML data (a string, number, list, or mapping), stored after `status` at the bottom of the spec YAML. It is matched by `find` and returned whenever the spec is printed (`read`, `find`, `query tasks`)
 
+A spec's `meta` may contain a `change` key proposing a change. The object may contain only these keys:
+
+- `description` — non-empty string, a full replacement of the spec's description
+- `motivation` — non-empty string, a full replacement of the spec's motivation
+- `acceptance_criteria` — an object whose zero-based numeric string index keys (`"0"`, `"1"`, ...) map to a string that replaces that criterion or to `false` that deletes it, and whose `new1`, `new2`, ... keys map to strings appended to the end of the list in key order
+- `change_status` — `pending` or `approved`
+
+`id`, `status`, and `meta` keys are not allowed inside it. `write` and `validate` reject change objects that violate this.
+
 ## ID format
 
 `{layer1}_{layer2}_..._{layerN}_{result}`, where the layer names come from `taxonomy.layers` (default `area_component_section`), lowercase, with `-` in place of spaces.
@@ -87,12 +96,12 @@ A spec's leaf file is named after the layer parts of its ID, with a `.spec.yaml`
 Run from anywhere in the repo; the script resolves the repo root itself. Any action may also take `--spec-dir <dir>` (in any position) to point at a different directory holding the `*.spec.yaml` files and `.config.yaml` — default is `<repo-root>/spec`.
 
 ```bash
-bash <skill-dir>/spec.sh read --id <id>
+bash <skill-dir>/spec.sh read --id <id> ["--include-history"]
 bash <skill-dir>/spec.sh write --id <id> --description "<text>" --motivation "<text>" --acceptance-criteria "<criterion>" ["<criterion> ...] [--status <name>] [--meta <yaml>]
 bash <skill-dir>/spec.sh delete --id <id>
-bash <skill-dir>/spec.sh find --query <keyword>
+bash <skill-dir>/spec.sh find --query <keyword> ["--include-history"]
 bash <skill-dir>/spec.sh query config
-bash <skill-dir>/spec.sh query tasks [--status <name>] [--layer <path> ...]
+bash <skill-dir>/spec.sh query tasks [--status <name>] [--layer <path> ...] ["--include-history"]
 bash <skill-dir>/spec.sh validate
 bash <skill-dir>/spec.sh config get
 bash <skill-dir>/spec.sh config set [--status <name>:<description> ...] [--layers <layer> ...] [--structure <yaml>]
@@ -100,13 +109,13 @@ bash <skill-dir>/spec.sh config add --term <term> [--parent <path>]
 bash <skill-dir>/spec.sh config remove --term <term> [--parent <path>]
 ```
 
-- `read` — prints the full spec YAML for `--id`.
-- `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. Reports `action=create` or `action=update`.
+- `read` — prints the full spec YAML for `--id`. When the spec's `meta` has a `history` key it is omitted unless `--include-history` is passed; all other meta fields are always printed.
+- `write` — creates or updates a spec. All fields are taken directly as CLI arguments, so no temporary files are needed. `--meta` is optional and takes any non-null YAML value, stored after `status` at the bottom of the spec YAML. The script validates the config, the schema (including `--status` when enabled and `--meta` when present), and the taxonomy before writing, keeps the leaf file sorted by id, and writes atomically. A `--meta` containing a `change` key is validated against the change schema (see Schema) and fails with `schema-invalid` otherwise. Reports `action=create` or `action=update`.
 - `delete` — removes the spec with `--id` from its leaf file. The file is rewritten atomically with the remaining specs (still sorted by id), and the file is deleted when the removed spec was its last entry. Fails with `not-found` when no spec has that id.
-- `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, status (when enabled), and meta (when present), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings, plus `meta` when present.
+- `find` — case-insensitive substring match across id, description, motivation, acceptance criteria, status (when enabled), and meta (when present), over every leaf file; prints the matches as a YAML list of `id`/`description` mappings, plus `meta` when present. A `meta.history` key is omitted unless `--include-history` is passed; all other meta fields are always printed.
 - `query config` — prints the repo's spec config as normalized YAML: `status` (`false`, or the list of `{name, description}` objects), `layers` (`false`, or the list of layer names), and `structure` when present. Reports `file=missing` when `spec/.config.yaml` is absent.
-- `query tasks` — lists the specs matching `--status <name>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings, plus `meta` (only when present).
-- `validate` — checks the config, that all spec IDs are unique, that every spec matches the schema, that status values are configured states, that IDs match the declared taxonomy, that every spec lives in its leaf file, and that every declared taxonomy term has at least one spec. Use it as a gate before committing spec or config changes.
+- `query tasks` — lists the specs matching `--status <name>` and/or one or more `--layer <path>` flags; a layer path is `/`-separated layer terms and may be a partial path (for example `interface/tui` matches every spec under that branch, and multiple `--layer` flags are OR-ed). At least one of `--status` or `--layer` is required. Prints a YAML list of `id`/`description`/`status` (status only when enabled) mappings, plus `meta` (only when present). A `meta.history` key is omitted unless `--include-history` is passed; all other meta fields are always printed.
+- `validate` — checks the config, that all spec IDs are unique, that every spec matches the schema (including validating `meta.change` values against the change schema), that status values are configured states, that IDs match the declared taxonomy, that every spec lives in its leaf file, and that every declared taxonomy term has at least one spec. Use it as a gate before committing spec or config changes.
 - `config get` — prints the contents of `spec/.config.yaml`, or `file=missing` when the file is absent.
 - `config set` — updates `spec/.config.yaml` (creating it when absent). Each flag present replaces that part; the other parts are preserved. `--status` takes one or more `<name>:<description>` entries, or a single `false` to disable status; the first `:` separates the name from the description and both must be non-empty (for example `wip:in progress`). `--layers` takes one or more layer names, or a single `false` for no layers, which drops the structure. `--structure` takes a YAML mapping of the full taxonomy structure. The resulting config is validated and written atomically.
 - `config add` — adds a term to the taxonomy structure. `--parent` is the `/`-separated path to the list that receives the term (omit it for a single-layer taxonomy); `--parent` must point to a leaf list. Use `config set --structure` to create intermediate branches or change the layers.
@@ -133,7 +142,7 @@ The first stdout line is always a single key=value status line; exit 0 = success
   - `yaml-error` — a spec file, the config, or a `--meta` value is not valid YAML
   - `config-invalid` — `spec/.config.yaml` (or the result of a `config` change) violates the skill's `.config.schema.json`
   - `config-missing` — `spec/.config.yaml` does not exist (for `config add` or `config remove`)
-  - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), a null `--meta` (write), or a spec field violation (validate)
+  - `schema-invalid` — an empty or invalid `--description`, `--motivation`, or `--acceptance-criteria` (write), a null `--meta` (write), a `meta.change` that violates the change schema (write and validate), or a spec field violation (validate)
   - `status-invalid` — `--status` missing, unknown, or passed while status is disabled
   - `taxonomy-unknown` — a layer term is not declared in the config taxonomy structure
   - `layer-invalid` — `--layer` passed while `taxonomy.layers` is `false`, or a layer path with the wrong number of terms

@@ -1,0 +1,10 @@
+status:
+  - name: pending
+    description: not started
+  - name: done
+    description: finished
+taxonomy:
+  layers: [area, component, section]
+  structure:
+    a:
+      b: [c]
