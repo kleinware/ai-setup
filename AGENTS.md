@@ -11,6 +11,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
   - `models: ` — model serving and benchmarking under `models/`
   - `devtools: ` — developer workflow scripts under `devtools/`
   - This list maps 1:1 with `ALLOWED_PREFIXES` in `.githooks/commit-msg`.
+- Spec status updates (to done) must be committed together with the change that implemented the spec, not as a separate commit.
 - After cloning, run `./setup.sh` to install git hooks.
 - Keep this file's Layout section in sync with the repo.
 
