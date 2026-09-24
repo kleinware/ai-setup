@@ -91,6 +91,20 @@ specs:
         displayed data within a few seconds without a manual page reload.
     status: done
 
+  - id: tooling_spec-manager_site_port
+    description: The spec-manage-site.sh script defaults to port 8080 and accepts a --port <X> flag to
+      override it (e.g. spec-manage-site.sh --port 3003); a 'Tip:' line about the flag is printed
+      after the site URL once the site is up, and is also printed when the server cannot start
+      because the port is already in use.
+    motivation: A user who hits a port conflict immediately sees how to pick a different port and retry.
+    acceptance_criteria:
+      - Running spec-manage-site.sh with no --port flag starts the site on 127.0.0.1:8080 and prints
+        the site URL followed by a 'Tip:' line mentioning the --port flag.
+      - Running spec-manage-site.sh --port 3003 starts the site on 127.0.0.1:3003.
+      - When the port is already in use and the server fails to start, the output includes a 'Tip:'
+        line mentioning the --port flag.
+    status: pending
+
   - id: tooling_spec-manager_site_stack
     description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
       serves the app and its API routes, and the look is the shadcn preset b6ok544un2."

@@ -1,0 +1,109 @@
+specs:
+  - id: tooling_spec-manager_change_merge-change
+    description: The CLI provides a merge change action that takes a spec id (--id) and the final spec
+      state (--final-spec <yaml>), where the final spec state is the change data in the spec's
+      meta.change applied on top of the existing spec — fields missing from the change data stay
+      unchanged, fields present overwrite the spec's fields, and lists such as acceptance_criteria
+      follow the index-replace, false-remove, and new-key-append semantics — and the action refuses
+      to merge unless the spec's meta.change.change_status is approved, records a copy of the
+      current meta.change as the newest entry of meta.history with diff equal to the previous
+      history count plus 1, and saves the given final spec state to the spec's leaf file.
+    motivation: So an approved change is applied to the spec while every applied change is kept in an
+      ordered, durable history.
+    acceptance_criteria:
+      - merge change on a spec whose meta.change.change_status is pending, or on a spec with no
+        meta.change, fails with exit 1 and a descriptive error stating the change must be approved.
+      - merge change on a spec whose meta.change.change_status is approved succeeds and the leaf
+        file then holds the given final spec state under the spec id.
+      - On success, the saved spec's meta.history contains a copy of the pre-merge meta.change as
+        its newest entry, with diff equal to the number of previous history entries plus 1.
+      - "meta.history is a list of objects each with a diff and the change payload, sorted
+        descending by diff: after two applied changes the front entry is diff 2 and the last entry
+        is diff 1."
+    status: pending
+
+  - id: tooling_spec-manager_change_meta-change-schema
+    description: "A spec's meta may carry a change key holding a proposed change to the spec: the same
+      schema as a spec minus id and status, containing only the fields that have proposed changes
+      (description, motivation, acceptance_criteria) plus a change_status set to pending or
+      approved; present fields are complete replacements, and the change works whether or not status
+      is enabled."
+    motivation: So a spec change can be proposed as data on the spec, iterated while pending, approved
+      and committed to source control, then picked up for implementation with a record of what
+      changed.
+    acceptance_criteria:
+      - A change object may contain only the description, motivation, acceptance_criteria, and
+        change_status keys; no id, status, or meta key is allowed in it.
+      - change_status is present in every change object and is either pending or approved.
+      - acceptance_criteria is an object whose zero-based numeric string index keys map to a string
+        that replaces that criterion or to false that deletes it, and whose new1, new2, ... keys map
+        to strings appended to the end of the list in key order.
+      - description and motivation, when present, are non-empty strings that completely replace the
+        spec's corresponding fields.
+    status: pending
+
+  - id: tooling_spec-manager_change_meta-change-validation
+    description: "write and validate enforce the meta.change schema: a change key with a disallowed key
+      (id, status, or meta), an empty description or motivation, a change_status that is not pending
+      or approved, or an acceptance_criteria numeric index key mapping to a value that is neither a
+      string nor false is rejected; all other meta keys remain unrestricted."
+    motivation: So malformed change payloads are caught at the CLI and store level, keeping the
+      pending-to-approved workflow trustworthy.
+    acceptance_criteria:
+      - A write with a meta.change containing an id, status, or meta key fails with reason
+        schema-invalid.
+      - A write with a meta.change whose change_status is not pending or approved fails with reason
+        schema-invalid.
+      - A write with a meta.change.acceptance_criteria whose numeric index key maps to a value that
+        is neither a string nor false fails with reason schema-invalid.
+      - validate reports specs whose meta.change violates the change schema.
+      - A spec whose meta contains keys other than change (e.g. a meta.notes string) validates
+        successfully.
+    status: pending
+
+  - id: tooling_spec-manager_change_query-change-output
+    description: read, find, and query tasks include a spec's meta in their output — including
+      meta.change when present — but omit meta.history unless an --include-history flag is set; all
+      other meta fields are included whether or not the flag is set.
+    motivation: So change proposals are visible in normal queries while applied-change history stays
+      opt-in, keeping the output focused.
+    acceptance_criteria:
+      - read --id of a spec with a meta.change prints the meta.change object.
+      - read, find, and query tasks omit meta.history from the output by default.
+      - Passing --include-history to read, find, or query tasks includes meta.history in the output.
+      - Other meta fields (e.g. a meta.notes string) are printed with and without --include-history.
+    status: pending
+
+  - id: tooling_spec-manager_change_skill-md-change-docs
+    description: SKILL.md documents the meta.change schema (the delta fields, the acceptance_criteria
+      index-replace, false-remove, and new-key-append semantics, and the pending/approved
+      change_status), the upsert change and merge change CLI actions, the workflow from pending
+      through approved to merge, and states that changes with change_status approved are eligible
+      for implementation.
+    motivation: So an agent reading SKILL.md can manage the full change workflow without
+      reverse-engineering the format.
+    acceptance_criteria:
+      - SKILL.md contains a section describing the meta.change schema, including the
+        acceptance_criteria update, remove, and add semantics.
+      - SKILL.md documents the upsert change and merge change actions, including that merge requires
+        change_status approved and records the applied change in meta.history.
+      - SKILL.md states that changes with change_status approved are eligible for implementation.
+    status: pending
+
+  - id: tooling_spec-manager_change_upsert-change
+    description: The CLI provides an upsert change action that takes a spec id (--id) and the
+      meta.change fields to upsert (--change <yaml>); it merges them into the spec's existing
+      meta.change, creating it if absent, overwriting individual keys (for acceptance_criteria,
+      individual index and new keys), and saves the spec to its leaf file.
+    motivation: So a change can be built up incrementally, field by field, while it stays in pending state.
+    acceptance_criteria:
+      - An upsert change on a spec with no existing meta.change creates a meta.change containing
+        exactly the fields passed, with change_status set to pending unless the upsert passes one.
+      - An upsert change on a spec with an existing meta.change preserves keys not passed and
+        replaces the keys passed; for acceptance_criteria, individual index and new keys merge into
+        the existing object.
+      - After an upsert change, read of the spec shows the merged meta.change and every other spec
+        field is unchanged.
+      - An upsert change that would produce a meta.change violating the change schema fails with
+        reason schema-invalid.
+    status: pending

@@ -27,3 +27,4 @@ taxonomy:
       spec-manager:
         - specs
         - site
+        - change
