@@ -106,4 +106,4 @@ specs:
         field is unchanged.
       - An upsert change that would produce a meta.change violating the change schema fails with
         reason schema-invalid.
-    status: pending
+    status: done

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "yaml";
 
 const SKILL_DIR = join(import.meta.dir, "..");
 const SCRIPT = join(SKILL_DIR, "spec.ts");
@@ -802,6 +803,76 @@ const cases: Case[] = [
       expectCode: 0,
       expectContains: ["status=success"],
     },
+    {
+      name: "[upsert-change] upsert on a spec with no meta creates a meta.change with pending change_status",
+      fix: "h-write-update",
+      args: [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'description: brand new description\nmotivation: brand new motivation\nacceptance_criteria: {"0": "c1 new"}',
+      ],
+      expectCode: 0,
+      expectContains: ["action=upsert-change", "a_b_c_one", "path=a_b_c.spec.yaml"],
+      expectFile: {
+        name: "a_b_c.spec.yaml",
+        contains: ["change:", "change_status: pending", "brand new description", "brand new motivation", "c1 new"],
+        notContains: ["notes", "history"],
+      },
+    },
+    {
+      name: "[upsert-change] upsert with an explicit change_status stores it",
+      fix: "h-write-update",
+      args: [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'change_status: approved\ndescription: brand new description',
+      ],
+      expectCode: 0,
+      expectContains: ["action=upsert-change", "a_b_c_one"],
+      expectFile: { name: "a_b_c.spec.yaml", contains: ["change_status: approved"] },
+    },
+    {
+      name: "[upsert-change] upsert merges into an existing meta.change",
+      fix: "h-change-output",
+      args: [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'description: "updated description v2"\nacceptance_criteria: {"0": "c1 again", new2: "another"}',
+      ],
+      expectCode: 0,
+      expectContains: ["action=upsert-change", "path=a_b_c.spec.yaml"],
+      expectFile: {
+        name: "a_b_c.spec.yaml",
+        contains: [
+          "updated description v2",
+          "c1 again",
+          "another",
+          "updated motivation",
+          "appended criterion",
+          "notes: keep me",
+          "change_status: pending",
+        ],
+        notContains: ["revised criterion"],
+      },
+    },
+    {
+      name: "[upsert-change] upsert producing a disallowed key fails schema-invalid",
+      fix: "h-write-update",
+      args: ["upsert", "change", "--id", "a_b_c_one", "--change", "notes: extra"],
+      expectCode: 1,
+      expectContains: ["reason=schema-invalid", "meta.change"],
+    },
+    {
+      name: "[upsert-change] upsert with a bad change_status fails schema-invalid",
+      fix: "h-write-update",
+      args: ["upsert", "change", "--id", "a_b_c_one", "--change", "change_status: merged"],
+      expectCode: 1,
+      expectContains: ["reason=schema-invalid", "change_status"],
+    },
+    {
+      name: "[upsert-change] upsert of an unknown id fails not-found",
+      fix: "s-read-missing",
+      args: ["upsert", "change", "--id", "a_b_c_missing", "--change", "change_status: pending"],
+      expectCode: 1,
+      expectContains: ["reason=not-found"],
+    },
   ];
 
 describe("spec-manager CLI", () => {
@@ -855,6 +926,132 @@ describe("[meta-change-schema] round trip", () => {
       expect(r.out).toContain("c1 revised");
       expect(r.out).toContain("c3 added");
       expect(r.out).toContain("c2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+function loadLeaf(dir: string, id: string): Record<string, unknown> {
+  const data = parse(readFileSync(join(dir, "a_b_c.spec.yaml"), "utf8")) as {
+    specs: Record<string, unknown>[];
+  };
+  const spec = data.specs.find((s) => s.id === id);
+  expect(spec).toBeDefined();
+  return spec as Record<string, unknown>;
+}
+
+describe("[upsert-change] round trip", () => {
+  it("create: read shows the exact passed fields plus change_status pending, other spec fields unchanged", () => {
+    const dir = freshDir("h-write-update");
+    try {
+      const u = runIn(dir, [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'description: brand new description\nmotivation: brand new motivation\nacceptance_criteria: {"0": "c1 new"}',
+      ]);
+      expect(u.code).toBe(0);
+      const r = runIn(dir, ["read", "--id", "a_b_c_one"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("change_status: pending");
+      expect(r.out).toContain("brand new description");
+      expect(r.out).toContain("brand new motivation");
+      expect(r.out).toContain("c1 new");
+      expect(r.out).toContain("first spec");
+      expect(r.out).toContain("because we need it");
+      expect(r.out).toContain("works correctly");
+      expect(r.out).toContain("status: done");
+      expect(r.out).not.toContain("notes");
+      expect(r.out).not.toContain("history");
+      const spec = loadLeaf(dir, "a_b_c_one");
+      expect(spec.meta).toEqual({
+        change: {
+          change_status: "pending",
+          description: "brand new description",
+          motivation: "brand new motivation",
+          acceptance_criteria: { "0": "c1 new" },
+        },
+      });
+      expect(spec.id).toBe("a_b_c_one");
+      expect(spec.description).toBe("first spec");
+      expect(spec.motivation).toBe("because we need it");
+      expect(spec.acceptance_criteria).toEqual(["works correctly"]);
+      expect(spec.status).toBe("done");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("create: explicit change_status is respected", () => {
+    const dir = freshDir("h-write-update");
+    try {
+      const u = runIn(dir, [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'change_status: approved\ndescription: brand new description',
+      ]);
+      expect(u.code).toBe(0);
+      const r = runIn(dir, ["read", "--id", "a_b_c_one"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("change_status: approved");
+      expect(r.out).toContain("brand new description");
+      const spec = loadLeaf(dir, "a_b_c_one");
+      const change = (spec.meta as Record<string, unknown>).change as Record<string, unknown>;
+      expect(change.change_status).toBe("approved");
+      expect("motivation" in change).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("merge: read shows the merged meta.change and every other spec field unchanged", () => {
+    const dir = freshDir("h-change-output");
+    try {
+      const u = runIn(dir, [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'description: "updated description v2"\nacceptance_criteria: {"0": "c1 again", new2: "another"}',
+      ]);
+      expect(u.code).toBe(0);
+      const r = runIn(dir, ["read", "--id", "a_b_c_one"]);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("updated description v2");
+      expect(r.out).toContain("c1 again");
+      expect(r.out).toContain("another");
+      expect(r.out).toContain("updated motivation");
+      expect(r.out).toContain("appended criterion");
+      expect(r.out).toContain("notes: keep me");
+      expect(r.out).toContain("change_status: pending");
+      expect(r.out).not.toContain("revised criterion");
+      expect(r.out).toContain("first spec");
+      expect(r.out).toContain("because we need it");
+      expect(r.out).toContain("works correctly");
+      expect(r.out).toContain("runs fast");
+      expect(r.out).toContain("status: done");
+      const spec = loadLeaf(dir, "a_b_c_one");
+      expect(spec.meta).toEqual({
+        change: {
+          change_status: "pending",
+          description: "updated description v2",
+          motivation: "updated motivation",
+          acceptance_criteria: { "0": "c1 again", "1": false, new1: "appended criterion", new2: "another" },
+        },
+        notes: "keep me",
+        history: ["applied 2026-01-01"],
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("store still validates after upsert", () => {
+    const dir = freshDir("h-change-output");
+    try {
+      const u = runIn(dir, [
+        "upsert", "change", "--id", "a_b_c_one", "--change",
+        'description: "updated description v2"\nacceptance_criteria: {"0": "c1 again", new2: "another"}',
+      ]);
+      expect(u.code).toBe(0);
+      const v = runIn(dir, ["validate"]);
+      expect(v.code).toBe(0);
+      expect(v.out).toContain("status=success");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

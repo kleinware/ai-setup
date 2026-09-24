@@ -6,6 +6,7 @@
 //     read     --id <id> [--include-history]
 //     write    --id <id> --description <text> --motivation <text> \
 //         --acceptance-criteria <criterion> [<criterion> ...] [--status <name>] [--meta <yaml>]
+//     upsert   change --id <id> --change <yaml>
 //     delete   --id <id>
 //     find     --query <string> [--include-history]
 //     query    config
@@ -57,6 +58,7 @@ const USAGE = `Usage:
 Actions:
   read     --id <id>
    write    --id <id> --description <text> --motivation <text> --acceptance-criteria <c> [<c> ...] [--status <name>] [--meta <yaml>]
+   upsert   change --id <id> --change <yaml>
    delete   --id <id>
    find     --query <string>
    query    config
@@ -73,6 +75,7 @@ Flags:
 const KNOWN_FLAGS: Record<string, string[]> = {
   read: ["id", "include-history"],
   write: ["id", "description", "motivation", "acceptance-criteria", "status", "meta"],
+  upsert: ["id", "change"],
   delete: ["id"],
   find: ["query", "include-history"],
   query: ["status", "layer", "include-history"],
@@ -91,6 +94,7 @@ type Args = Record<string, string | string[] | boolean>;
 const REQUIRED_FLAGS: Record<string, string[]> = {
   read: ["id"],
   write: ["id", "description", "motivation", "acceptance-criteria"],
+  upsert: ["id", "change"],
   delete: ["id"],
   find: ["query"],
   query: [],
@@ -103,6 +107,7 @@ const QUERY_SUBCOMMANDS = ["config", "tasks"];
 const SUBCOMMANDS: Record<string, string[]> = {
   config: CONFIG_SUBCOMMANDS,
   query: QUERY_SUBCOMMANDS,
+  upsert: ["change"],
 };
 
 function kv(v: unknown): string {
@@ -740,6 +745,95 @@ function doWrite(args: Args, specDir: string, cfg: Config): number {
   return 0;
 }
 
+function doUpsert(args: Args, specDir: string, cfg: Config): number {
+  const id = args.id as string;
+  if (!idRegex(cfg.layers).test(id)) {
+    fail("invalid-id", { id, pattern: idPattern(cfg.layers) });
+  }
+  let changeInput: unknown;
+  try {
+    changeInput = parse(args.change as string);
+  } catch (e) {
+    fail("yaml-error", { id, file: "change", error: errLine(e) });
+  }
+  if (typeof changeInput !== "object" || changeInput === null || Array.isArray(changeInput)) {
+    fail("schema-invalid", { id }, ["--change must be a YAML mapping"]);
+  }
+  const store = loadStore(specDir);
+  if (store.error) fail(store.error, withDetail({ file: "spec/" + STORE_GLOB, id }, store.detail));
+  let file: string | null = null;
+  let spec: Record<string, unknown> | null = null;
+  for (const [name, specs] of Object.entries(store.files)) {
+    const found = specs.find((s) => s.id === id);
+    if (found) {
+      file = name;
+      spec = found;
+      break;
+    }
+  }
+  if (file === null || spec === null) {
+    const known = Object.values(store.files)
+      .flat()
+      .map((s) => String(s.id))
+      .join(",");
+    fail("not-found", { id, known });
+  }
+  const meta = spec.meta;
+  const metaIsMapping = typeof meta === "object" && meta !== null && !Array.isArray(meta);
+  if (meta !== undefined && meta !== null && !metaIsMapping) {
+    fail("schema-invalid", { id }, ["meta must be a mapping to carry meta.change"]);
+  }
+  const metaMap = metaIsMapping ? (meta as Record<string, unknown>) : {};
+  const hasExistingChange = "change" in metaMap;
+  if (hasExistingChange) {
+    const existing = metaMap.change;
+    if (typeof existing !== "object" || existing === null || Array.isArray(existing)) {
+      fail("schema-invalid", { id }, ["meta.change must be a mapping to merge"]);
+    }
+  }
+  const mergedChange: Record<string, unknown> = hasExistingChange
+    ? { ...(metaMap.change as Record<string, unknown>) }
+    : {};
+  for (const [k, v] of Object.entries(changeInput as Record<string, unknown>)) {
+    if (
+      k === "acceptance_criteria" &&
+      typeof mergedChange.acceptance_criteria === "object" &&
+      mergedChange.acceptance_criteria !== null &&
+      !Array.isArray(mergedChange.acceptance_criteria) &&
+      typeof v === "object" &&
+      v !== null &&
+      !Array.isArray(v)
+    ) {
+      mergedChange.acceptance_criteria = {
+        ...(mergedChange.acceptance_criteria as Record<string, unknown>),
+        ...(v as Record<string, unknown>),
+      };
+    } else {
+      mergedChange[k] = v;
+    }
+  }
+  if (mergedChange.change_status === undefined) {
+    mergedChange.change_status = "pending";
+  }
+  const problems = changeProblems(mergedChange, id);
+  if (problems.length) fail("schema-invalid", { id }, problems);
+  const newMeta: Record<string, unknown> = metaIsMapping
+    ? { ...metaMap, change: mergedChange }
+    : { change: mergedChange };
+  const newSpec: Record<string, unknown> = { ...spec, meta: newMeta };
+  const specs = (store.files[file as string].filter((s) => s.id !== id) as Record<string, unknown>[])
+    .concat([newSpec]);
+  specs.sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
+  const filePath = path.join(specDir, file as string);
+  try {
+    writeFile(filePath, specs);
+  } catch (e) {
+    fail("io-error", { file: file as string, error: errLine(e) });
+  }
+  console.log(`status=success action=upsert-change id=${id} path=${file}`);
+  return 0;
+}
+
 function doDelete(args: Args, specDir: string, cfg: Config): number {
   const id = args.id as string;
   if (!idRegex(cfg.layers).test(id)) {
@@ -1150,6 +1244,8 @@ function main(argv: string[]): number {
       return doRead(opts, specDir, cfg);
     case "write":
       return doWrite(opts, specDir, cfg);
+    case "upsert":
+      return doUpsert(opts, specDir, cfg);
     case "delete":
       return doDelete(opts, specDir, cfg);
     case "find":
