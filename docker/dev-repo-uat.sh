@@ -136,7 +136,7 @@ fail_test() {
 }
 
 # Verify the full stack for a running container: docker ps, herdr machine,
-# ssh (landing in /workspace/main), uid match, devtools in PATH, opencode
+# ssh (landing in /home/agent), uid match, devtools in PATH, opencode
 # inference, and the version file. Runs seven tests and sets VERSION.
 verify_stack() {
     local host="$1" ssh_port="$2"
@@ -165,15 +165,15 @@ verify_stack() {
     # and a terminal stdin makes "timeout ssh" hang (timeout runs ssh in its
     # own process group, and ssh then does not exit after the remote command
     # finishes).
-    # Interactive ssh lands in /workspace/main (non-interactive ssh does not
+    # Interactive ssh lands in /home/agent (non-interactive ssh does not
     # read .bashrc, hence bash -i).
-    begin_test "interactive ssh lands in /workspace/main"
+    begin_test "interactive ssh lands in /home/agent"
     local cwd_out
     if ! cwd_out="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" 'bash -ic pwd 2>/dev/null' </dev/null 2>&1)"; then
         fail_test "ssh to $host failed" "ssh $host 'bash -ic pwd'" "$cwd_out"
     fi
-    [[ "$cwd_out" == "/workspace/main" ]] \
-        || fail_test "interactive ssh session started in $cwd_out, expected /workspace/main" "ssh $host 'bash -ic pwd'" "$cwd_out"
+    [[ "$cwd_out" == "/home/agent" ]] \
+        || fail_test "interactive ssh session started in $cwd_out, expected /home/agent" "ssh $host 'bash -ic pwd'" "$cwd_out"
     ok_test
 
     # Container user matches the host user.
