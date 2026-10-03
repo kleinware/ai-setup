@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
@@ -811,18 +811,27 @@ test(
 );
 
 test(
-  "T13 [tooling_spec-manager_site_follow-up-notes] clearing a textarea removes the field; clearing all fields leaves an id-only item",
+  "T13 [tooling_spec-manager_site_follow-up-notes] clearing a textarea removes the field; clearing every field removes the item from the file",
   async () => {
     const id = "app_ui_list_items-paginated";
     await withServer(async (root) => {
       await expectServing(root);
       const page = await openPage();
       try {
-        // Saving is triggered by blur (Enter only inserts a newline).
+        // Saving is triggered by blur (Enter only inserts a newline); each
+        // save is awaited (indicator no longer pending) before the next.
         const clearField = async (testId: string) => {
           const field = page.locator(`[data-testid="${testId}"]`);
           await field.fill("");
           await field.blur();
+          await page.waitForFunction(
+            (tid: string) => {
+              const el = document.querySelector(`[data-testid="${tid}"]`);
+              return el !== null && el.getAttribute("data-state") !== "pending";
+            },
+            testId.replace("follow-up-", "follow-up-indicator-"),
+            { timeout: 15_000 },
+          );
         };
 
         await clearField(`follow-up-criterion-${id}-0`);
@@ -879,20 +888,14 @@ test(
         const doc = await pollFollowUp(
           root,
           (d) => {
-            const item = fuItem(d, id);
-            return item !== undefined && Object.keys(item).length === 1 && item.id === id;
+            const items = d.items ?? [];
+            return items.length === 1 && items[0].id === "tools_cli_run_flags-parsed";
           },
           15_000,
         );
 
         const items = doc.items ?? [];
-        expect(items.length).toBeGreaterThan(0);
-        expect(items.map((it) => it.id)).toEqual([
-          "app_ui_list_items-paginated",
-          "tools_cli_run_flags-parsed",
-        ]);
-        const final = fuItem(doc, id)!;
-        expect(Object.keys(final)).toEqual(["id"]);
+        expect(items.map((it) => it.id)).toEqual(["tools_cli_run_flags-parsed"]);
         const flags = fuItem(doc, "tools_cli_run_flags-parsed")!;
         expect(flags.description).toBe(
           "Flag parsing must reject unknown flags with a usage hint.",
@@ -1334,6 +1337,64 @@ test(
           const entry = (d.specs ?? []).find((s) => s.id === id);
           return entry !== undefined && entry.status === "done";
         }, 15_000);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+// --- Spike: follow-up file cleanup (T21) -----------------------------------
+
+test(
+  "T21 [tooling_spec-manager_site_follow-up-file] clearing every follow-up field removes each id and deletes spec_follow_up.yaml when no items remain",
+  async () => {
+    const fields = [
+      "follow-up-desc-app_ui_list_items-paginated",
+      "follow-up-motivation-app_ui_list_items-paginated",
+      "follow-up-criterion-app_ui_list_items-paginated-0",
+      "follow-up-criterion-app_ui_list_items-paginated-1",
+      "follow-up-desc-tools_cli_run_flags-parsed",
+      "follow-up-criterion-tools_cli_run_flags-parsed-0",
+    ];
+    await withServer(async (root) => {
+      await expectServing(root);
+      const page = await openPage();
+      try {
+        // Clear every follow-up field of the two fixture ids, awaiting each
+        // save (indicator no longer pending) before the next.
+        for (const testId of fields) {
+          const field = page.locator(`[data-testid="${testId}"]`);
+          await field.fill("");
+          await field.blur();
+          await page.waitForFunction(
+            (tid: string) => {
+              const el = document.querySelector(`[data-testid="${tid}"]`);
+              return el !== null && el.getAttribute("data-state") !== "pending";
+            },
+            testId.replace("follow-up-", "follow-up-indicator-"),
+            { timeout: 15_000 },
+          );
+        }
+
+        // No spec id carries any follow-up data anymore, so the file itself
+        // must be gone from disk.
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+          if (!existsSync(join(root, "spec", "spec_follow_up.yaml"))) break;
+          await sleep(500);
+        }
+        expect(existsSync(join(root, "spec", "spec_follow_up.yaml"))).toBe(false);
+
+        // The page still renders after the refresh: every spec row is present
+        // and every follow-up field is empty.
+        for (const id of FIXTURE_IDS) {
+          expect(await page.locator(`[data-testid="spec-row-${id}"]`).count()).toBe(1);
+        }
+        for (const testId of fields) {
+          expect(await page.locator(`[data-testid="${testId}"]`).inputValue()).toBe("");
+        }
       } finally {
         await page.close();
       }

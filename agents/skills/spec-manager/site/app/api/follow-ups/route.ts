@@ -76,6 +76,17 @@ function criteriaCount(spec: SpecEntry): number {
   return c.length > 0 ? 1 : 0;
 }
 
+// Serialize read-modify-write cycles on the follow-up file so concurrent
+// saves cannot clobber each other's writes.
+const fileLocks = new Map<string, Promise<void>>();
+
+function withFileLock(file: string, fn: () => Promise<void>): Promise<void> {
+  const prev = fileLocks.get(file) ?? Promise.resolve();
+  const next = prev.then(() => fn());
+  fileLocks.set(file, next.catch(() => undefined));
+  return next;
+}
+
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -123,51 +134,65 @@ export async function POST(request: Request) {
   }
 
   const file = path.join(projectRoot(), "spec", FOLLOW_UP_FILE);
-  let items: FollowUpItem[];
+  let item: FollowUpItem | undefined;
   try {
-    let doc: unknown;
-    try {
-      doc = parse(await fsp.readFile(file, "utf8"));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        doc = { items: [] };
-      } else {
-        throw e;
-      }
-    }
-    items = normalizeItems(doc);
-  } catch {
-    return NextResponse.json({ error: "io-error" }, { status: 500 });
-  }
-
-  let item = items.find((i) => i.id === id);
-  if (!item) {
-    item = { id };
-    items.push(item);
-  }
-  if (noteField === "criterion") {
-    const key = String(criterionIndex);
-    if (value === "") {
-      if (item.acceptance_criteria) {
-        delete item.acceptance_criteria[key];
-        if (Object.keys(item.acceptance_criteria).length === 0) {
-          delete item.acceptance_criteria;
+    await withFileLock(file, async () => {
+      let doc: unknown;
+      try {
+        doc = parse(await fsp.readFile(file, "utf8"));
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+          doc = { items: [] };
+        } else {
+          throw e;
         }
       }
-    } else {
-      item.acceptance_criteria = {
-        ...(item.acceptance_criteria ?? {}),
-        [key]: value,
-      };
-    }
-  } else if (value === "") {
-    delete item[noteField];
-  } else {
-    item[noteField] = value;
-  }
+      const items = normalizeItems(doc);
+      let found = items.find((i) => i.id === id);
+      if (!found) {
+        found = { id };
+        items.push(found);
+      }
+      if (noteField === "criterion") {
+        const key = String(criterionIndex);
+        if (value === "") {
+          if (found.acceptance_criteria) {
+            delete found.acceptance_criteria[key];
+            if (Object.keys(found.acceptance_criteria).length === 0) {
+              delete found.acceptance_criteria;
+            }
+          }
+        } else {
+          found.acceptance_criteria = {
+            ...(found.acceptance_criteria ?? {}),
+            [key]: value,
+          };
+        }
+      } else if (value === "") {
+        delete found[noteField];
+      } else {
+        found[noteField] = value;
+      }
 
-  try {
-    await atomicWrite(file, itemsYaml(items));
+      // An item with no data left is removed from the file, and the file
+      // itself is deleted when it was the last item.
+      const hasData =
+        found.description !== undefined ||
+        found.motivation !== undefined ||
+        found.acceptance_criteria !== undefined;
+      if (!hasData) {
+        items.splice(items.indexOf(found), 1);
+      }
+      item = hasData ? found : undefined;
+
+      if (items.length === 0) {
+        await fsp.unlink(file).catch((e) => {
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        });
+      } else {
+        await atomicWrite(file, itemsYaml(items));
+      }
+    });
   } catch {
     return NextResponse.json({ error: "io-error" }, { status: 500 });
   }

@@ -18,7 +18,8 @@ specs:
     description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
       an id (required, matching the spec id), an optional description string, an optional motivation
       string, and an optional acceptance_criteria object with numeric index keys and string values;
-      items are sorted by spec id."
+      items are sorted by spec id; an id appears in the file only while it carries at least one
+      follow-up field, and the file is deleted when its last item is removed."
     motivation: A stable, predictable file format lets the spec curator agent read the user's feedback
       and discuss it without parsing ad-hoc structure.
     acceptance_criteria:
@@ -27,6 +28,8 @@ specs:
       - Only id is required; description and motivation are optional strings, and
         acceptance_criteria is an optional object mapping numeric index keys to string values.
       - The items list is sorted by spec id.
+      - An id's item is removed from the file when all of its follow-up fields are cleared.
+      - When the last item is removed, spec/spec_follow_up.yaml is deleted.
     status: done
 
   - id: tooling_spec-manager_site_follow-up-notes
@@ -44,7 +47,8 @@ specs:
         spec/spec_follow_up.yaml and the indicator becomes a green checkmark; pressing Enter inserts
         a newline rather than saving, so the field can hold multi-line text.
       - If the user clears a textarea and the save fires, the corresponding field is removed from
-        that item in spec/spec_follow_up.yaml, leaving an id-only item when every field is empty.
+        that item in spec/spec_follow_up.yaml, and the item is removed when its last field is
+        cleared.
       - The textarea grows vertically as text is entered, so all typed text, including line breaks,
         is visible without scrolling.
     status: done
