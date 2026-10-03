@@ -1,0 +1,14 @@
+{
+  "allowDangerouslySkipPermissions": true,
+  "model": "sonnet",
+  "autoApprove": {
+    "bash": "*",
+    "edit": "*",
+    "write": "*",
+    "read": "*"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}

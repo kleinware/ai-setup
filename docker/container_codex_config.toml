@@ -1,0 +1,18 @@
+personality = "pragmatic"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "low"
+approvals_reviewer = "auto"
+service_tier = "default"
+
+# Trust all workspace paths
+[projects."/workspace"]
+trust_level = "trusted"
+
+[projects."/home/agent"]
+trust_level = "trusted"
+
+[features]
+hooks = true
+
+[tui]
+screen_reader_detection_done = true

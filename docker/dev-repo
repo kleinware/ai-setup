@@ -49,6 +49,8 @@ resolve_script_dir() {
 require_host_files() {
     export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
     export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
+    export CLAUDE_CREDENTIALS="${CLAUDE_CREDENTIALS:-$HOME/.claude/.credentials.json}"
+    export CODEX_AUTH="${CODEX_AUTH:-$HOME/.codex/auth.json}"
     HOST_UID="$(id -u)"
     HOST_GID="$(id -g)"
     export HOST_UID HOST_GID
@@ -60,6 +62,16 @@ require_host_files() {
 
     if [[ ! -f "$GITCONFIG" ]]; then
         echo "gitconfig not found: $GITCONFIG" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$CLAUDE_CREDENTIALS" ]]; then
+        echo "Claude credentials not found: $CLAUDE_CREDENTIALS" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$CODEX_AUTH" ]]; then
+        echo "Codex auth not found: $CODEX_AUTH" >&2
         exit 1
     fi
 }
@@ -402,6 +414,8 @@ down_project() {
     export PROJECT_DIR
     export SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-$HOME/.ssh/herdr-container.pub}"
     export GITCONFIG="${GITCONFIG:-$HOME/.gitconfig}"
+    export CLAUDE_CREDENTIALS="${CLAUDE_CREDENTIALS:-$HOME/.claude/.credentials.json}"
+    export CODEX_AUTH="${CODEX_AUTH:-$HOME/.codex/auth.json}"
     HOST_UID="$(id -u)"
     HOST_GID="$(id -g)"
     export HOST_UID HOST_GID

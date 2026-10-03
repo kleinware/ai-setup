@@ -75,6 +75,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Claude Code and OpenAI Codex CLI tools
+RUN npm install -g @anthropic/claude-code openai
+
 # OpenCode built from the pinned fork commit above
 COPY --from=opencode-build /usr/local/bin/opencode /usr/local/bin/opencode
 
@@ -109,8 +112,8 @@ RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
 RUN userdel -r ubuntu \
     && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace /home/agent/bin /home/agent/.config/opencode/agents /home/agent/.config/herdr \
-    && chown -R agent:agent /home/agent/.config
+    && mkdir -p /workspace /home/agent/bin /home/agent/.config/opencode/agents /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex \
+    && chown -R agent:agent /home/agent/.config /home/agent/.claude /home/agent/.codex
 
 # Install Herdr using its official installer
 RUN su - agent -c \
@@ -132,6 +135,8 @@ RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
 # them without bind-mounting them from the host repo.
 COPY docker/container_opencode.json /opt/setup-src/docker/container_opencode.json
 COPY docker/container_herdr_config.toml /opt/setup-src/docker/container_herdr_config.toml
+COPY docker/container_claude_settings.json /opt/setup-src/docker/container_claude_settings.json
+COPY docker/container_codex_config.toml /opt/setup-src/docker/container_codex_config.toml
 COPY agents/skills /opt/setup-src/agents/skills
 COPY agents/agent-files /opt/setup-src/agents/agent-files
 COPY devtools /opt/setup-src/devtools
@@ -167,17 +172,19 @@ RUN printf '%s\n' \
     '    groupmod -g "$HOST_GID" agent' \
     'fi' \
     'chown agent:agent /home/agent' \
-    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr' \
+    'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex' \
     'SETUP=/opt/setup-src' \
-    'for path in docker/container_opencode.json docker/container_herdr_config.toml agents/skills agents/agent-files devtools; do' \
+    'for path in docker/container_opencode.json docker/container_herdr_config.toml docker/container_claude_settings.json docker/container_codex_config.toml agents/skills agents/agent-files devtools; do' \
     '    [ -e "$SETUP/$path" ] || { echo "missing $SETUP/$path" >&2; exit 1; }' \
     'done' \
     'install -m 644 "$SETUP/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
     'install -m 644 "$SETUP/docker/container_herdr_config.toml" /home/agent/.config/herdr/config.toml' \
+    'install -m 644 "$SETUP/docker/container_claude_settings.json" /home/agent/.claude/settings.json' \
+    'install -m 644 "$SETUP/docker/container_codex_config.toml" /home/agent/.codex/config.toml' \
     'rsync -a --delete "$SETUP/agents/skills/" /home/agent/.config/opencode/skills/' \
     'rsync -a --delete "$SETUP/agents/agent-files/" /home/agent/.config/opencode/agents/' \
     'rsync -a --delete "$SETUP/devtools/" /home/agent/bin/' \
-    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/bin' \
+    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex /home/agent/bin' \
     'if ! grep -qF "export PATH=\"/home/agent/bin:\$PATH\"" /home/agent/.bashrc 2>/dev/null; then' \
     '    echo "export PATH=\"/home/agent/bin:\$PATH\"" >> /home/agent/.bashrc' \
     'fi' \
