@@ -411,6 +411,17 @@ down_project() {
         -p "$PROJECT_NAME" \
         down -v --remove-orphans
 
+    # Remove the container from herdr.
+    if command -v herdr >/dev/null 2>&1; then
+        local profile_id
+        profile_id="$(herdr machine list --json 2>/dev/null \
+            | jq -r --arg host "$PROJECT_NAME" '[ .[] | select(.target == $host) ] | .[0].id' 2>/dev/null)" || profile_id=""
+        if [[ "$profile_id" =~ ^[a-f0-9]+$ ]]; then
+            herdr machine remove "$profile_id" >/dev/null 2>&1 || true
+            echo "- Removed machine ${PROJECT_NAME} from herdr"
+        fi
+    fi
+
     echo "Tore down ${PROJECT_NAME} and its volumes."
 }
 
