@@ -1,5 +1,5 @@
 // POST /api/follow-ups — updates one saved follow-up note field for a spec in
-// spec/spec_follow_up.yaml, keeping the file sorted and well-formed.
+// spec_follow_up.yaml at the project root, keeping the file sorted and well-formed.
 
 import { promises as fsp } from "node:fs";
 import path from "node:path";
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid-field" }, { status: 400 });
   }
 
-  const file = path.join(projectRoot(), "spec", FOLLOW_UP_FILE);
+  const file = path.join(projectRoot(), FOLLOW_UP_FILE);
   let item: FollowUpItem | undefined;
   try {
     await withFileLock(file, async () => {

@@ -57,6 +57,8 @@ function sleep(ms: number): Promise<void> {
 function copyFixture(): string {
   const root = mkdtempSync(join(tmpdir(), "spec-site-uat-"));
   cpSync(join(FIXTURE, "spec"), join(root, "spec"), { recursive: true });
+  const followUp = join(FIXTURE, "spec_follow_up.yaml");
+  if (existsSync(followUp)) cpSync(followUp, join(root, "spec_follow_up.yaml"));
   return root;
 }
 
@@ -150,7 +152,7 @@ function fuItem(doc: FollowUpDoc, id: string): Record<string, unknown> | undefin
 }
 
 function parseFollowUpFile(root: string): FollowUpDoc {
-  return parse(readFileSync(join(root, "spec", "spec_follow_up.yaml"), "utf8")) as FollowUpDoc;
+  return parse(readFileSync(join(root, "spec_follow_up.yaml"), "utf8")) as FollowUpDoc;
 }
 
 async function pollFollowUp(
@@ -209,7 +211,7 @@ describe("UAT [tooling_spec-manager_site_uat]", () => {
       await withServer(async (root) => {
         // The test repo starts without spec_follow_up.yaml: the UI must
         // create it, and only in this scratch root.
-        expect(existsSync(join(root, "spec", "spec_follow_up.yaml"))).toBe(false);
+        expect(existsSync(join(root, "spec_follow_up.yaml"))).toBe(false);
         await expectServing(root);
 
         const page = await openPage();

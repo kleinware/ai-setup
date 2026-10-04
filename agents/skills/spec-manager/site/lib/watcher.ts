@@ -1,5 +1,6 @@
-// Server-side file watcher: watches the spec/ directory and notifies
-// subscribers (the SSE route) shortly after any file changes.
+// Server-side file watcher: watches the spec/ directory and the
+// spec_follow_up.yaml file at the project root, notifying subscribers (the
+// SSE route) shortly after any file changes.
 
 import { watch, type FSWatcher } from "chokidar";
 import path from "node:path";
@@ -40,8 +41,10 @@ function emit(): void {
 
 export function ensureWatcher(): void {
   if (watcher !== null) return;
-  const specDir = path.join(projectRoot(), "spec");
-  const w = watch(specDir, {
+  const root = projectRoot();
+  const specDir = path.join(root, "spec");
+  const followUpFile = path.join(root, "spec_follow_up.yaml");
+  const w = watch([specDir, followUpFile], {
     ignoreInitial: true,
     depth: 0,
     awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },

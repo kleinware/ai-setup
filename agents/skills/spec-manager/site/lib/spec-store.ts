@@ -1,6 +1,6 @@
-// Server-side reader for the spec store. Reads every leaf *.spec.yaml file,
-// spec/.config.yaml, and spec/spec_follow_up.yaml from the project root that
-// the launcher script passes in via SPEC_ROOT.
+// Server-side reader for the spec store. Reads every leaf *.spec.yaml file
+// and spec/.config.yaml from the spec directory, plus spec_follow_up.yaml
+// from the project root that the launcher script passes in via SPEC_ROOT.
 
 import { promises as fsp } from "node:fs";
 import path from "node:path";
@@ -103,10 +103,6 @@ export async function readStore(): Promise<StoreData> {
       config = normalizeConfig(doc);
       continue;
     }
-    if (name === "spec_follow_up.yaml") {
-      followUps = normalizeFollowUps(doc);
-      continue;
-    }
     if (!name.endsWith(".spec.yaml")) continue;
     const list = (doc as { specs?: unknown })?.specs;
     if (!Array.isArray(list)) {
@@ -123,6 +119,17 @@ export async function readStore(): Promise<StoreData> {
         status: asString(raw.status),
         meta: raw.meta === undefined ? undefined : raw.meta,
       });
+    }
+  }
+
+  // The follow-up file lives at the project root, outside the spec directory.
+  try {
+    followUps = normalizeFollowUps(
+      parse(await fsp.readFile(path.join(root, "spec_follow_up.yaml"), "utf8")),
+    );
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      errors.push(`spec_follow_up.yaml: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
