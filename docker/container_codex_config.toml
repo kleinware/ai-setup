@@ -1,8 +1,9 @@
 personality = "pragmatic"
 model = "gpt-5.6-sol"
 model_reasoning_effort = "low"
-approvals_reviewer = "auto_review"
 service_tier = "default"
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
 
 # Trust all workspace paths
 [projects."/workspace"]
