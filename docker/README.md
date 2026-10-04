@@ -77,5 +77,5 @@ prints the command to run. With `--no-add-herdr-machine` it neither queries
 nor registers herdr and always prints the command to run:
 
 ```
-herdr machine add dev-project-a --label "project-a"
+herdr machine add dev-project-a-2240 --label "project-a-2240"
 ```

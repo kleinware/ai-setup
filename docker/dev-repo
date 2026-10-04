@@ -524,7 +524,7 @@ case "$COMMAND" in
                 echo "- ${SSH_CONFIG_ACTION} ~/.ssh/config entry for host ${SSH_HOST}"
             fi
             trust_container_host_key "$SSH_PORT"
-            register_herdr_machine "$SSH_HOST" "$PROJECT" "$NO_ADD_HERDR_MACHINE"
+            register_herdr_machine "$SSH_HOST" "${PROJECT}-${RANGE_START}" "$NO_ADD_HERDR_MACHINE"
         fi
         ;;
 
