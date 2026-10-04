@@ -103,7 +103,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-TOTAL_TESTS=24
+TOTAL_TESTS=28
 test_no=0
 pass_no=0
 
@@ -137,7 +137,8 @@ fail_test() {
 
 # Verify the full stack for a running container: docker ps, herdr machine,
 # ssh (landing in /home/agent), uid match, devtools in PATH, opencode
-# inference, and the version file. Runs seven tests and sets VERSION.
+# inference, globally registered agents and skills, and the version file. Runs
+# nine tests and sets VERSION.
 verify_stack() {
     local host="$1" ssh_port="$2"
 
@@ -204,6 +205,24 @@ verify_stack() {
     # take much longer than the usual few seconds when other runs are active.
     if ! oc_out="$(timeout 600 ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" 'opencode run hi' </dev/null 2>&1)"; then
         fail_test "opencode inference failed" "ssh $host 'opencode run hi'" "$oc_out"
+    fi
+    ok_test
+
+    begin_test "custom agents are registered for all three harnesses"
+    local agents_out
+    if ! agents_out="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" \
+        'set -eu; for name in implementation-orchestrator spec-curator spec-orchestrator; do test -f "/home/agent/.config/opencode/agents/$name.md"; test -f "/home/agent/.claude/agents/$name.md"; test -f "/home/agent/.codex/agents/$name.toml"; done; python3 -c '\''import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path("/home/agent/.codex/agents").glob("*.toml")]'\''' \
+        </dev/null 2>&1)"; then
+        fail_test "custom agent registration is incomplete" "check agent files over ssh" "$agents_out"
+    fi
+    ok_test
+
+    begin_test "skills are registered for all three harnesses"
+    local skills_out
+    if ! skills_out="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" \
+        'set -eu; for skill in git-worktree-skill spec-manager; do test -f "/home/agent/.config/opencode/skills/$skill/SKILL.md"; test -f "/home/agent/.claude/skills/$skill/SKILL.md"; test -f "/home/agent/.agents/skills/$skill/SKILL.md"; done' \
+        </dev/null 2>&1)"; then
+        fail_test "skill registration is incomplete" "check skill files over ssh" "$skills_out"
     fi
     ok_test
 

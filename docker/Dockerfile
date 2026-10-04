@@ -109,7 +109,7 @@ RUN BUN_ARCH="$(uname -m | sed -e 's/x86_64/x64/')" \
 RUN userdel -r ubuntu \
     && useradd -m -s /bin/bash agent \
     && passwd -d agent \
-    && mkdir -p /workspace /home/agent/bin /home/agent/.config/opencode/agents /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex \
+    && mkdir -p /workspace /home/agent/bin /home/agent/.config/opencode/agents /home/agent/.config/opencode/skills /home/agent/.config/herdr /home/agent/.claude/agents /home/agent/.claude/skills /home/agent/.codex/agents /home/agent/.agents/skills \
     && chown -R agent:agent /home/agent/.config /home/agent/.claude /home/agent/.codex
 
 # Install Herdr using its official installer
@@ -129,18 +129,9 @@ RUN su - agent -c \
         /usr/local/bin/claude \
     && rm -rf /home/agent/.local/share/claude /home/agent/.local/bin/claude
 
-# OpenAI Codex CLI using its official installer. The pinned binary is copied
-# to /usr/local/bin; the standalone package (needed by the interactive TUI)
-# is moved to /opt/codex-packages and symlinked in, so project volumes keep
-# only a symlink instead of the versioned package.
-RUN su - agent -c \
-    'curl -fsSL https://chatgpt.com/codex/install.sh | sh' \
-    && install -m 755 \
-        /home/agent/.local/bin/codex \
-        /usr/local/bin/codex \
-    && mv /home/agent/.codex/packages /opt/codex-packages \
-    && ln -s /opt/codex-packages /home/agent/.codex/packages \
-    && rm -f /home/agent/.local/bin/codex
+# OpenAI Codex CLI. npm installs the executable and package under /usr/local,
+# outside the persistent agent-home volume.
+RUN npm install -g @openai/codex
 
 # Playwright (headless Chromium for agent-driven browser tests)
 # Browsers live outside /home/agent so the agent-home named volume
@@ -159,7 +150,13 @@ COPY docker/container_claude_settings.json /opt/setup-src/docker/container_claud
 COPY docker/container_codex_config.toml /opt/setup-src/docker/container_codex_config.toml
 COPY agents/skills /opt/setup-src/agents/skills
 COPY agents/agent-files /opt/setup-src/agents/agent-files
+COPY docker/build-agent-assets.py /opt/setup-src/docker/build-agent-assets.py
 COPY devtools /opt/setup-src/devtools
+
+# Compile the OpenCode-authored Markdown agents into each harness's native
+# format. Skills already use the portable Agent Skills format.
+RUN python3 /opt/setup-src/docker/build-agent-assets.py \
+      /opt/setup-src/agents /opt/agent-assets
 
 # Configure SSH for key-only access
 RUN mkdir -p /run/sshd /var/lib/herdr-ssh \
@@ -194,23 +191,23 @@ RUN printf '%s\n' \
     'chown agent:agent /home/agent' \
     'chown agent:agent /home/agent/.config /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex' \
     'SETUP=/opt/setup-src' \
-    'for path in docker/container_opencode.json docker/container_herdr_config.toml docker/container_claude_settings.json docker/container_codex_config.toml agents/skills agents/agent-files devtools; do' \
+    'for path in docker/container_opencode.json docker/container_herdr_config.toml docker/container_claude_settings.json docker/container_codex_config.toml devtools; do' \
     '    [ -e "$SETUP/$path" ] || { echo "missing $SETUP/$path" >&2; exit 1; }' \
     'done' \
     'install -m 644 "$SETUP/docker/container_opencode.json" /home/agent/.config/opencode/opencode.json' \
     'install -m 644 "$SETUP/docker/container_herdr_config.toml" /home/agent/.config/herdr/config.toml' \
     'install -m 644 "$SETUP/docker/container_claude_settings.json" /home/agent/.claude/settings.json' \
     'install -m 644 "$SETUP/docker/container_codex_config.toml" /home/agent/.codex/config.toml' \
-    'rsync -a --delete "$SETUP/agents/skills/" /home/agent/.config/opencode/skills/' \
-    'rsync -a --delete "$SETUP/agents/agent-files/" /home/agent/.config/opencode/agents/' \
+    'mkdir -p /home/agent/.config/opencode/agents /home/agent/.config/opencode/skills /home/agent/.claude/agents /home/agent/.claude/skills /home/agent/.codex/agents /home/agent/.agents/skills' \
+    'rsync -a --delete /opt/agent-assets/opencode/agents/ /home/agent/.config/opencode/agents/' \
+    'rsync -a --delete /opt/agent-assets/claude/agents/ /home/agent/.claude/agents/' \
+    'rsync -a --delete /opt/agent-assets/codex/agents/ /home/agent/.codex/agents/' \
+    'rsync -a --delete /opt/agent-assets/skills/ /home/agent/.config/opencode/skills/' \
+    'rsync -a --delete --exclude synced/ /opt/agent-assets/skills/ /home/agent/.claude/skills/' \
+    'rsync -a --delete /opt/agent-assets/skills/ /home/agent/.agents/skills/' \
     'rsync -a --delete "$SETUP/devtools/" /home/agent/bin/' \
-    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/bin' \
-    'chown agent:agent /home/agent/.claude /home/agent/.codex' \
+    'chown -R agent:agent /home/agent/.config/opencode /home/agent/.config/herdr /home/agent/.claude /home/agent/.codex /home/agent/.agents /home/agent/bin' \
     'chown agent:agent /home/agent/.claude/settings.json /home/agent/.codex/config.toml' \
-    'if [ ! -L /home/agent/.codex/packages ]; then' \
-    '    rm -rf /home/agent/.codex/packages' \
-    '    ln -s /opt/codex-packages /home/agent/.codex/packages' \
-    'fi' \
     'if ! grep -qF "export PATH=\"/home/agent/bin:\$PATH\"" /home/agent/.bashrc 2>/dev/null; then' \
     '    echo "export PATH=\"/home/agent/bin:\$PATH\"" >> /home/agent/.bashrc' \
     'fi' \

@@ -25,12 +25,21 @@ Host dev-my-project-2240
 
 # Config files
 
-At container start, the startup script copies `container_opencode.json`,
-`container_herdr_config.toml`, `agents/skills/`, `agents/agent-files/`, and `devtools/`
-from the image's baked-in setup files (`/opt/setup-src`, copied from the repo
-at build time) into the container: the config and agent files into the
-agent's config dirs, and `devtools/` into `/home/agent/bin`, so host-side
-edits or moving the repo do not affect running containers. Recreate the container to refresh them. The gitconfig is
+At image build time, `docker/build-agent-assets.py` treats
+`agents/agent-files/*.md` as the agent source of truth. It preserves those
+files for OpenCode, emits Claude Code Markdown agents, and emits Codex TOML
+agents. The portable Agent Skills directories under `agents/skills/` are
+copied without transformation. At container start, the startup script installs
+the generated assets globally for all three harnesses:
+
+- OpenCode: `~/.config/opencode/agents/` and `~/.config/opencode/skills/`
+- Claude Code: `~/.claude/agents/` and `~/.claude/skills/`
+- Codex: `~/.codex/agents/` and `~/.agents/skills/`
+
+It also copies `container_opencode.json`, `container_herdr_config.toml`, and
+`devtools/` from the image's baked-in setup files (`/opt/setup-src`) into the
+container. Host-side edits or moving the repo therefore do not affect running
+containers. Rebuild the image and recreate the container to refresh them. The gitconfig is
 still bind-mounted read-only to `/home/agent/.gitconfig`. The startup script
 also prepends `/home/agent/bin` to PATH in `/home/agent/.bashrc` (adding the
 line only once). It also writes the container build timestamp to
