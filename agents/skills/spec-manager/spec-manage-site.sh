@@ -4,6 +4,15 @@
 # (run with bun) binds to 0.0.0.0 on port 8080 by default; pass
 # --port <X> (or --port=<X>) to start it on a different port, e.g.
 #   spec-manage-site.sh --port 3003
+#
+# Crash diagnostics: all server output is tee'd to
+#   $SPEC_SITE_LOGS/site-<timestamp>.log
+# (default: $HOME/spec-manager-site-logs), and when the server exits a crash
+# report (exit code, signal, OOM counter, tail of the log) is written to
+#   $SPEC_SITE_LOGS/report-<timestamp>.log
+# EXPERIMENTAL_DEBUG_MEMORY_USAGE=1 makes the dev server print a memory
+# report (RSS/heap) with every request and dump a heap snapshot into
+# site/.next/ if heap usage exceeds 70%.
 set -u
 
 PORT=8080
@@ -63,10 +72,43 @@ fi
 
 export SPEC_ROOT="$(pwd)"
 export SPEC_PORT="$PORT"
+export EXPERIMENTAL_DEBUG_MEMORY_USAGE=1
+
+LOG_DIR="${SPEC_SITE_LOGS:-$HOME/spec-manager-site-logs}"
+mkdir -p "$LOG_DIR"
+RUN_ID="$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="$LOG_DIR/site-$RUN_ID.log"
+REPORT_FILE="$LOG_DIR/report-$RUN_ID.log"
+START_EPOCH="$(date +%s)"
 
 TIP="Tip: pass --port <X> to start the site on a different port (e.g. spec-manage-site.sh --port 3003)"
 
-bun "$site_dir/node_modules/.bin/next" dev -H 0.0.0.0 --port "$PORT" "$site_dir" &
+write_report() {
+  local code="$1"
+  local oom
+  oom="$(sed -n 's/^oom_kill //p' /sys/fs/cgroup/memory.events 2>/dev/null || echo unknown)"
+  {
+    echo "=== spec-site crash report ==="
+    echo "run: $RUN_ID"
+    echo "started: $(date -d "@$START_EPOCH" -Is)"
+    echo "ended: $(date -Is)"
+    echo "uptime: $(( $(date +%s) - START_EPOCH ))s"
+    echo "exit code: $code"
+    if [ "$code" -ge 128 ]; then
+      echo "killed by signal $((code - 128))"
+    fi
+    echo "cgroup oom_kill: $oom"
+    echo "log: $LOG_FILE"
+    echo "---- last 80 log lines ----"
+    tail -n 80 "$LOG_FILE"
+  } > "$REPORT_FILE"
+  echo "Server exited with code $code"
+  echo "Crash report: $REPORT_FILE"
+  echo "Server log: $LOG_FILE"
+  echo "$TIP"
+}
+
+bun "$site_dir/node_modules/.bin/next" dev -H 0.0.0.0 --port "$PORT" "$site_dir" > >(tee "$LOG_FILE") 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null' INT TERM
 
@@ -84,10 +126,14 @@ if [ "$ready" -eq 1 ]; then
   echo "http://127.0.0.1:${PORT}/"
   echo "$TIP"
   wait "$server_pid"
-  exit $?
+  exit_code=$?
+  write_report "$exit_code"
+  exit "$exit_code"
 fi
 
 wait "$server_pid"
+exit_code=$?
+write_report "$exit_code"
 echo "spec-manage-site.sh: error: the site server failed to start on http://127.0.0.1:${PORT}/ — the port may already be in use" >&2
 echo "$TIP" >&2
 exit 1
