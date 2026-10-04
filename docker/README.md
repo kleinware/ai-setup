@@ -45,6 +45,18 @@ also prepends `/home/agent/bin` to PATH in `/home/agent/.bashrc` (adding the
 line only once). It also writes the container build timestamp to
 `/home/agent/.container_version.txt` (for example `2026-12-04 18:43:17`).
 
+To install the same generated agents and skills on the host after editing the
+sources in this repository, run:
+
+```sh
+agents/install-all.sh
+```
+
+The installer updates the user-level discovery paths for all three harnesses.
+It tracks the files it owns in `~/.local/state/ai-setup/agent-assets.manifest`,
+so renamed or removed source assets are cleaned up without deleting unrelated
+agents or skills already present on the host.
+
 # Web
 
 Port 8080 inside the container is published on the host as the SSH port + 6
