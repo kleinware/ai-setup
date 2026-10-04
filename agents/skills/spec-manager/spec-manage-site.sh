@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launches the spec viewer/editor site for the project root in the current
 # directory. The root must contain a spec/ folder. The Next.js dev server
-# (run with bun) binds to 127.0.0.1 on port 8080 by default; pass
+# (run with bun) binds to 0.0.0.0 on port 8080 by default; pass
 # --port <X> (or --port=<X>) to start it on a different port, e.g.
 #   spec-manage-site.sh --port 3003
 set -u
@@ -66,7 +66,7 @@ export SPEC_PORT="$PORT"
 
 TIP="Tip: pass --port <X> to start the site on a different port (e.g. spec-manage-site.sh --port 3003)"
 
-bun "$site_dir/node_modules/.bin/next" dev -H 127.0.0.1 --port "$PORT" "$site_dir" &
+bun "$site_dir/node_modules/.bin/next" dev -H 0.0.0.0 --port "$PORT" "$site_dir" &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null' INT TERM
 

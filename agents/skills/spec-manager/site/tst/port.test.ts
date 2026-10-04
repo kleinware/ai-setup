@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createConnection } from "node:net";
 
@@ -112,6 +112,15 @@ async function expectServing(root: string, port: number): Promise<void> {
   expect(body.root).toBe(root);
 }
 
+function nonLoopbackIpv4(): string {
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) return address.address;
+    }
+  }
+  throw new Error("no non-loopback IPv4 address is available to verify the bind address");
+}
+
 function portIsFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ port, host: "127.0.0.1" });
@@ -207,7 +216,7 @@ test(
 );
 
 test(
-  "T2 [tooling_spec-manager_site_port] --port 3003: starts the site on 127.0.0.1:3003 and prints the URL followed by the Tip line",
+  "T2 [tooling_spec-manager_site_port] --port 3003: binds on all IPv4 interfaces and prints the loopback URL followed by the Tip line",
   async () => {
     const root = copyFixture();
     const free = await portIsFree(3003);
@@ -217,6 +226,7 @@ test(
       if (free) {
         await waitForHttpOk("http://127.0.0.1:3003/", 90_000);
         await expectServing(root, 3003);
+        await waitForHttpOk(`http://${nonLoopbackIpv4()}:3003/`, 90_000);
         await pollOutput(() => urlThenTip(launcher.output.stdout, 3003), 90_000);
       } else {
         await waitForExit(launcher.child, 90_000);

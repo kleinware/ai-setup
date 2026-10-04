@@ -70,17 +70,29 @@ specs:
 
   - id: tooling_spec-manager_site_launch
     description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
-      and editor site on 127.0.0.1 port 8080, and must be run from a project root where spec/
-      exists.
-    motivation: One command opens the repo's specs in a browser with no manual dev-server setup, and
-      binding to loopback keeps the tool local-only.
+      and editor site on 0.0.0.0 port 8080, and must be run from a project root where spec/ exists.
+    motivation: Binding to all IPv4 interfaces makes the site reachable through container port
+      forwarding while the host can still restrict the published port to loopback.
     acceptance_criteria:
       - Running bash agents/skills/spec-manager/spec-manage-site.sh from a repo root with a spec/
         folder starts a server, and GET http://127.0.0.1:8080/ returns the site with HTTP 200.
-      - The server binds to 127.0.0.1 on port 8080, not to a network interface.
+      - The server binds to 0.0.0.0 on port 8080 so it is reachable through container port
+        forwarding.
       - Running the script from a directory without a spec/ folder exits non-zero with an error
         message.
     status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
+              and editor site on 0.0.0.0 port 8080, and must be run from a project root where spec/
+              exists.
+            motivation: Binding to all IPv4 interfaces makes the site reachable through container port
+              forwarding while the host can still restrict the published port to loopback.
+            acceptance_criteria:
+              "1": The server binds to 0.0.0.0 on port 8080 so it is reachable through container port forwarding.
+            change_status: approved
 
   - id: tooling_spec-manager_site_live-data
     description: The site reads its data from the spec/ folder of the repo it was launched from (the
@@ -102,12 +114,21 @@ specs:
       because the port is already in use.
     motivation: A user who hits a port conflict immediately sees how to pick a different port and retry.
     acceptance_criteria:
-      - Running spec-manage-site.sh with no --port flag starts the site on 127.0.0.1:8080 and prints
-        the site URL followed by a 'Tip:' line mentioning the --port flag.
-      - Running spec-manage-site.sh --port 3003 starts the site on 127.0.0.1:3003.
+      - Running spec-manage-site.sh with no --port flag binds to 0.0.0.0:8080 and prints the
+        loopback site URL followed by a 'Tip:' line mentioning the --port flag.
+      - Running spec-manage-site.sh --port 3003 binds to 0.0.0.0:3003.
       - When the port is already in use and the server fails to start, the output includes a 'Tip:'
         line mentioning the --port flag.
     status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            acceptance_criteria:
+              "0": Running spec-manage-site.sh with no --port flag binds to 0.0.0.0:8080 and prints the loopback
+                site URL followed by a 'Tip:' line mentioning the --port flag.
+              "1": Running spec-manage-site.sh --port 3003 binds to 0.0.0.0:3003.
+            change_status: approved
 
   - id: tooling_spec-manager_site_stack
     description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
