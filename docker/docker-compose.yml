@@ -36,16 +36,6 @@ services:
         target: /home/agent/.gitconfig
         read_only: true
 
-      - type: bind
-        source: ${CLAUDE_CREDENTIALS:?CLAUDE_CREDENTIALS is required}
-        target: /home/agent/.claude/.credentials.json
-        read_only: true
-
-      - type: bind
-        source: ${CODEX_AUTH:?CODEX_AUTH is required}
-        target: /home/agent/.codex/auth.json
-        read_only: true
-
     environment:
       HOME: /home/agent
       TERM: xterm-256color

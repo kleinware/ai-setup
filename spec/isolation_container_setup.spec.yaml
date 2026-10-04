@@ -1,4 +1,15 @@
 specs:
+  - id: isolation_container_setup_agent-tools-path
+    description: The claude, codex, herdr, and opencode CLIs resolve on the agent user's PATH inside the
+      container
+    motivation: Agents and scripts run as the agent user and must be able to invoke these tools by name
+      without absolute paths, whether the binary lives in /usr/local/bin (root-shared) or in the
+      agent home.
+    acceptance_criteria:
+      - As the agent user, each of 'claude --version', 'codex --version', 'herdr --version', and
+        'opencode --version' resolves via PATH and prints a version
+    status: done
+
   - id: isolation_container_setup_devtools-bin-path
     description: The container startup script copies devtools/ from the repo into /home/agent/bin and
       makes /home/agent/bin the first PATH entry in the agent's shell.
