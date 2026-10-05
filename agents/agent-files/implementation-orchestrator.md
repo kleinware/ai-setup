@@ -2,6 +2,7 @@
 description: Implementation orchestrator for one project phase: given a limited set of spec IDs, it does no implementation itself, spawns up to 3 parallel implementation subagents, verifies behavior and spec-mapped tests, commits passing work, and reports back.
 mode: all
 permission:
+   external_directory: allow
    todowrite: deny
    question: deny
    doom_loop: deny
