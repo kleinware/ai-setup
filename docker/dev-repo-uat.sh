@@ -211,7 +211,7 @@ verify_stack() {
     begin_test "custom agents are registered for all three harnesses"
     local agents_out
     if ! agents_out="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" \
-        'set -eu; for name in implementation-orchestrator spec-curator spec-orchestrator; do test -f "/home/agent/.config/opencode/agents/$name.md"; test -f "/home/agent/.claude/agents/$name.md"; test -f "/home/agent/.codex/agents/$name.toml"; done; python3 -c '\''import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path("/home/agent/.codex/agents").glob("*.toml")]'\''' \
+        'set -eu; for name in implementation-orchestrator spec-orchestrator; do test -f "/home/agent/.config/opencode/agents/$name.md"; test -f "/home/agent/.claude/agents/$name.md"; test -f "/home/agent/.codex/agents/$name.toml"; done; python3 -c '\''import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path("/home/agent/.codex/agents").glob("*.toml")]'\''' \
         </dev/null 2>&1)"; then
         fail_test "custom agent registration is incomplete" "check agent files over ssh" "$agents_out"
     fi
@@ -220,7 +220,7 @@ verify_stack() {
     begin_test "skills are registered for all three harnesses"
     local skills_out
     if ! skills_out="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" \
-        'set -eu; for skill in git-worktree-skill spec-manager; do test -f "/home/agent/.config/opencode/skills/$skill/SKILL.md"; test -f "/home/agent/.claude/skills/$skill/SKILL.md"; test -f "/home/agent/.agents/skills/$skill/SKILL.md"; done' \
+        'set -eu; for skill in git-worktree-skill spec-curator spec-manager; do test -f "/home/agent/.config/opencode/skills/$skill/SKILL.md"; test -f "/home/agent/.claude/skills/$skill/SKILL.md"; test -f "/home/agent/.agents/skills/$skill/SKILL.md"; done' \
         </dev/null 2>&1)"; then
         fail_test "skill registration is incomplete" "check skill files over ssh" "$skills_out"
     fi

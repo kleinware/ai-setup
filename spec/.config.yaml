@@ -10,7 +10,7 @@ taxonomy:
     - section
   structure:
     agents:
-      agent-files:
+      skills:
         - spec-curator
     build:
       testing:

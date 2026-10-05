@@ -1,15 +1,5 @@
 specs:
-  - id: agents_agent-files_spec-curator_agent-file
-    description: The spec-curator agent file lives at agents/agent-files/spec-curator.md in primary mode
-      with todowrite, doom_loop, and task denied.
-    motivation: The curator works in the main conversation with the user, asks questions directly, and
-      must not spawn subagents or maintain a todo list.
-    acceptance_criteria:
-      - agents/agent-files/spec-curator.md exists with frontmatter carrying a description, mode
-        primary, and permission denials for todowrite, doom_loop, and task.
-    status: done
-
-  - id: agents_agent-files_spec-curator_audit-mode
+  - id: agents_skills_spec-curator_audit-mode
     description: When the curator notices a discrepancy between the spec store and observed behavior, it
       surfaces it and offers a full audit; in audit mode it does a mid-level pass, verifying that
       specs recorded as implemented are actually implemented and looking for meaningful implemented
@@ -25,7 +15,7 @@ specs:
         question tool call."
     status: done
 
-  - id: agents_agent-files_spec-curator_decision-doors
+  - id: agents_skills_spec-curator_decision-doors
     description: For one-way-door decisions the curator helps the user bottom them out and records the
       motivation in the spec for why the choice was picked over the alternatives; for two-way-door
       decisions the curator selects a reasonable default or presents a short list of options with
@@ -39,7 +29,7 @@ specs:
         without a user round trip, unless the user objects.
     status: done
 
-  - id: agents_agent-files_spec-curator_question-call
+  - id: agents_skills_spec-curator_question-call
     description: Whenever the curator has pending clarifications at the end of a turn, it ends the turn
       with exactly one question tool call bundling all of them.
     motivation: The user can answer all pending questions in one pass instead of trading clarifications
@@ -50,7 +40,19 @@ specs:
         working after it.
     status: done
 
-  - id: agents_agent-files_spec-curator_source-of-truth
+  - id: agents_skills_spec-curator_skill-file
+    description: The spec-curator skill lives at agents/skills/spec-curator/SKILL.md with frontmatter
+      carrying a name matching its folder and a description of what the curator does and when to use
+      it.
+    motivation: The curator is loaded as a skill into the main conversation with the user, asks
+      questions directly, and works without spawning subagents or maintaining a todo list.
+    acceptance_criteria:
+      - agents/skills/spec-curator/SKILL.md exists with frontmatter carrying name spec-curator and a
+        description.
+      - The old agent file agents/agent-files/spec-curator.md no longer exists.
+    status: done
+
+  - id: agents_skills_spec-curator_source-of-truth
     description: The curator treats the spec store as the primary source of truth for system state and
       does not do a deep dive of the codebase.
     motivation: The specs are the contract for the system, and an exhaustive code reading is expensive
@@ -62,7 +64,7 @@ specs:
         works from the spec store alone.
     status: done
 
-  - id: agents_agent-files_spec-curator_spec-shape
+  - id: agents_skills_spec-curator_spec-shape
     description: Specs written by the curator keep functional requirements as observable external
       behavior with programmatically verifiable acceptance criteria, keep infrastructure
       requirements such as framework and database choices as steering that is not directly verified,
@@ -77,7 +79,7 @@ specs:
       - The curator adds no spec detail beyond what is needed to build and verify the behavior.
     status: done
 
-  - id: agents_agent-files_spec-curator_spec-state-choice
+  - id: agents_skills_spec-curator_spec-state-choice
     description: When the repo's spec/.config.yaml does not already specify a status setup, the curator
       walks the user through managing spec state in source control, which has less overhead and is
       agent-friendly but churns git history, versus no spec state, which uses an external backlog
@@ -90,7 +92,7 @@ specs:
       - The chosen setup is written to spec/.config.yaml before any spec is written.
     status: done
 
-  - id: agents_agent-files_spec-curator_spec-store-only
+  - id: agents_skills_spec-curator_spec-store-only
     description: The curator never modifies files outside spec/ and changes spec entries and the config
       only through the spec-manager skill.
     motivation: Every change to the spec store is traceable to a skill action and schema-validated, and
@@ -102,7 +104,7 @@ specs:
       - The curator makes zero file modifications outside spec/.
     status: done
 
-  - id: agents_agent-files_spec-curator_taxonomy-refinement
+  - id: agents_skills_spec-curator_taxonomy-refinement
     description: The curator starts from the skill's default taxonomy or the existing spec/.config.yaml
       and refines the taxonomy layers as the project's scope becomes clear, adding new terms with
       the skill's config actions before writing the first spec that uses them.
@@ -114,18 +116,18 @@ specs:
       - spec.sh validate passes after every taxonomy change.
     status: done
 
-  - id: agents_agent-files_spec-curator_wired-opencode
-    description: The spec-curator agent file is made available inside project containers by copying
-      agents/agent-files into /home/agent/.config/opencode/agents, opencode's global markdown agents
-      directory, at container start.
-    motivation: "Copying the agent files into the container at start (rather than bind-mounting them
-      live) keeps running containers stable: host-side edits to the agent files, or moving the repo,
-      no longer change what a running container sees, and the container is recreated when its files
+  - id: agents_skills_spec-curator_wired-opencode
+    description: The spec-curator skill is made available inside project containers by baking
+      agents/skills into the image and copying it into the harness skill directories at container
+      start.
+    motivation: "Copying the skills into the container at start (rather than bind-mounting them live)
+      keeps running containers stable: host-side edits to the skill files, or moving the repo, no
+      longer change what a running container sees, and the container is recreated when its files
       should be refreshed."
     acceptance_criteria:
-      - docker/docker-compose.yml has no bind mount of agents/agent-files, and the container start
-        script generated by docker/Dockerfile copies agents/agent-files into
-        /home/agent/.config/opencode/agents.
-      - In a container started from the current compose file, the spec-curator agent is available as
-        a primary agent inside opencode.
+      - docker/docker-compose.yml has no bind mount of agents/skills, and the container start script
+        generated by docker/Dockerfile bakes agents/skills into the image and copies it into
+        /home/agent/.config/opencode/skills.
+      - In a container started from the current compose file, the spec-curator skill is available
+        inside opencode as /home/agent/.config/opencode/skills/spec-curator/SKILL.md.
     status: done
