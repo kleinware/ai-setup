@@ -17,7 +17,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
 
 ## Layout
 
-- `agents/skills/<name>/` — one skill per folder: `SKILL.md` (frontmatter + usage) plus bundled scripts. Current skills: `git-worktree-skill` (rebase a worktree branch onto a target branch), `spec-curator` (curate the spec store with the user through the spec-manager skill), `spec-manager` (manage the per-leaf specs in `spec/`).
+- `agents/skills/<name>/` — one skill per folder: `SKILL.md` (frontmatter + usage) plus bundled scripts. Current skills: `git-worktree-skill` (rebase a worktree branch onto a target branch), `pre-push-verification` (audit commits before pushing), `spec-curator` (curate the spec store with the user through the spec-manager skill), `spec-manager` (manage the per-leaf specs in `spec/`).
 - `agents/agent-files/` — agent definition markdown files (frontmatter + prompt): `spec-orchestrator.md` (mode `primary`), `implementation-orchestrator.md` (mode `all`).
 - `agents/install-all.sh` — compiles and installs the repo's agents and skills into the user-level OpenCode, Claude Code, and Codex discovery paths without deleting unrelated assets.
 - `~/.agents` is a symlink to `agents/` — edit skills in this repo.
