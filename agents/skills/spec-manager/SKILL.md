@@ -101,6 +101,16 @@ A spec's leaf file is named after the layer parts of its ID, with a `.spec.yaml`
 
 `write` creates or updates the leaf file for the given ID; `read` and `find` search across every leaf file in the spec directory. `validate` additionally checks that every spec lives in the file named after its leaf.
 
+## Reviewing changes in the spec manager UI
+
+After you create, update, delete, or merge a spec (any change to the spec store), tell the user they can review it in the spec manager UI and give them the command to launch it, with `<skill-dir>` and the repo root resolved to real absolute paths:
+
+```bash
+cd <repo-root> && bash <skill-dir>/spec-manage-site.sh [--port <X>]
+```
+
+The script serves the project in the current directory (default port 8080). Never run it yourself; it starts a long-lived dev server for the user's repo or worktree, so only print the command for the user to run.
+
 ## Actions
 
 Run from anywhere in the repo; the script resolves the repo root itself. Any action may also take `--spec-dir <dir>` (in any position) to point at a different directory holding the `*.spec.yaml` files and `.config.yaml` — default is `<repo-root>/spec`.

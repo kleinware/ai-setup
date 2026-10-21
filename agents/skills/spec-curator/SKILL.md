@@ -59,3 +59,7 @@ If you notice a discrepancy between the spec store and observed behavior, surfac
 1. Verify that each spec recorded as implemented is actually implemented.
 2. Look for meaningful behavior that is implemented but is not covered by any spec.
 3. Collect all observed discrepancies, present them to the user, and end the turn with a single `question` tool call that includes a recommended way to deal with each discrepancy: update the spec, add a missing spec, change the status, or dismiss it.
+
+## Pointing the user to the spec manager UI
+
+Whenever a spec is changed (created, updated, deleted, or merged), tell the user they can review the result in the spec manager UI and give them the launch command for this repo or worktree, as described in the spec-manager skill: `cd <repo-root> && bash <spec-manager-skill-dir>/spec-manage-site.sh`, with real absolute paths filled in. Do not run it for them.
