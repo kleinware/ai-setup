@@ -17,6 +17,10 @@ taxonomy:
     build:
       testing:
         - commit
+    devtools:
+      nw:
+        - menu
+        - layout
     isolation:
       container:
         - access

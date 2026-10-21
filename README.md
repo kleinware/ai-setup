@@ -9,7 +9,7 @@ Agent skills and repo tooling.
 - `agents/agent-files/` — agent definition markdown files (frontmatter + prompt)
 - `.githooks/` — version-controlled git hook sources
 - `setup.sh` — installs hooks from `.githooks/` into `.git/hooks/` (run after cloning)
-- `devtools/` — developer workflow scripts (e.g. `new-worktree.sh`: split a herdr pane vertically with opencode on the left, lazygit on the right)
+- `devtools/` — developer workflow scripts (e.g. `new-worktree.sh`: split a herdr pane into a harness picker (claude/codex/opencode) on the left, lazygit top right (70%), and a plain shell bottom right (30%))
 
 ## Commit conventions
 

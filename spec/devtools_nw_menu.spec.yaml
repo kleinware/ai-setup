@@ -1,0 +1,13 @@
+specs:
+  - id: devtools_nw_menu_harness-picker
+    description: Running nw clears the terminal and shows a quick menu in the left pane to pick the code
+      harness (claude, codex, opencode) instead of launching one automatically.
+    motivation: Different tasks call for different harnesses, and choosing should take one keystroke
+      rather than editing the script.
+    acceptance_criteria:
+      - The screen is cleared before the menu is shown.
+      - The menu lists claude, codex and opencode, numbered 1-3.
+      - Up/down arrows (or k/j) move the highlight and Enter selects it.
+      - Pressing 1, 2 or 3 selects that option immediately without Enter.
+      - The chosen harness replaces the menu process in the left pane.
+    status: done

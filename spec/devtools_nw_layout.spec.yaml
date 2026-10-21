@@ -1,0 +1,13 @@
+specs:
+  - id: devtools_nw_layout_right-column-split
+    description: nw splits the herdr pane into a left harness pane and a right column holding lazygit in
+      the upper pane (70% of height) and a plain shell in the project repo in the lower pane (30%).
+    motivation: Lazygit needs most of the space, while a small shell is enough for running commands and
+      navigating the repo.
+    acceptance_criteria:
+      - The left pane is the pane nw was run in.
+      - Only the upper right pane runs lazygit.
+      - The lower right pane is an idle shell whose cwd is the directory nw was run from.
+      - The upper right pane takes about 70% and the lower right about 30% of the right column
+        height.
+    status: done
