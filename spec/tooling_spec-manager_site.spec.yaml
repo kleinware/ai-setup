@@ -1,4 +1,42 @@
 specs:
+  - id: tooling_spec-manager_site_feedback-addressed
+    description: Below each follow-up note textarea a 'Feedback addressed' button, with help text saying
+      it clears the note, empties that textarea and deletes its entry from spec/spec_follow_up.yaml
+      exactly as if the user had deleted the text.
+    motivation: Once the spec curator agent has dealt with a note, the user can retire it in one click
+      instead of selecting and deleting its text.
+    acceptance_criteria:
+      - Clicking the button empties the associated textarea.
+      - The corresponding field is removed from spec/spec_follow_up.yaml immediately, with the item
+        and the file removed when nothing is left, as when the text is deleted by hand.
+      - The button is disabled while the textarea is empty.
+    status: done
+
+  - id: tooling_spec-manager_site_feedback-filter
+    description: The filter bar has a 'Has feedback' toggle that leaves only specs with at least one
+      follow-up note in spec/spec_follow_up.yaml (description, motivation, or any acceptance
+      criterion), and it combines with the status, taxonomy, and text filters.
+    motivation: The user reviews just the specs they left feedback on, for example to walk through them
+      with the spec curator agent, without scrolling the whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs that have a follow-up note under them.
+      - The toggle applies together with the status, taxonomy, and text filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+    status: done
+
+  - id: tooling_spec-manager_site_feedback-highlight
+    description: A follow-up note textarea that holds text is visually called out (amber border and
+      tint) so the user can see at a glance where feedback was provided; empty textareas keep the
+      default look.
+    motivation: Feedback lives in many textareas across many specs, and the user needs to spot which
+      ones carry notes without reading every field.
+    acceptance_criteria:
+      - A textarea with text, whether loaded from spec/spec_follow_up.yaml or just typed, is
+        rendered with a distinct highlight.
+      - A textarea with no text has no highlight, and the highlight disappears when the text is
+        cleared.
+    status: done
+
   - id: tooling_spec-manager_site_filters
     description: A filter bar along the top of the page can filter by taxonomy value, by status, and by
       free text matched against a spec's id, description, motivation, or any acceptance criterion.

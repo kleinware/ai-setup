@@ -9,6 +9,7 @@ import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react
 import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -65,16 +66,20 @@ function buildTree(specs: SpecEntry[], layers: string[]): GroupNode {
 }
 
 // A spec matches the active filters when it matches every one of them:
-// status (when set), taxonomy branch (when set), and text query (when set).
+// status (when set), taxonomy branch (when set), text query (when set), and
+// having feedback (when set).
 type SpecFilter = (spec: SpecEntry) => boolean;
 
 function makeFilter(
   status: string,
   taxonomy: string,
   query: string,
+  feedbackOnly: boolean,
+  feedbackIds: Set<string>,
 ): SpecFilter {
   const needle = query.trim().toLowerCase();
   return (spec) => {
+    if (feedbackOnly && !feedbackIds.has(spec.id)) return false;
     if (status !== "" && spec.status !== status) return false;
     if (taxonomy !== "") {
       const prefix = taxonomy.split("/").join("_") + "_";
@@ -195,6 +200,15 @@ function AutoGrowTextarea(props: ComponentProps<"textarea">) {
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
   return <Textarea ref={ref} value={value} {...rest} />;
+}
+
+// Whether a saved follow-up item still carries any note text.
+function hasFeedback(item: FollowUpItem): boolean {
+  return (
+    !!item.description ||
+    !!item.motivation ||
+    Object.values(item.acceptance_criteria ?? {}).some((v) => v !== "")
+  );
 }
 
 function SpecRow({
@@ -344,6 +358,53 @@ function SpecRow({
 
   const draftOf = (key: string) => fields[key]?.draft ?? "";
 
+  // "Feedback addressed": empties the field and saves the empty value right
+  // away, exactly as if the user had deleted the text.
+  const markAddressed = (key: string) => {
+    setDraft(key, "");
+    save(key, "");
+  };
+
+  // One note field: the textarea (visually called out while it holds text),
+  // its save indicator, and the "Feedback addressed" button with help text.
+  const noteField = (key: string, textareaId: string, suffix: string) => (
+    <div className="space-y-1">
+      <div className="flex items-start gap-2">
+        <AutoGrowTextarea
+          data-testid={textareaId}
+          data-has-feedback={draftOf(key) !== ""}
+          className={cn(
+            "flex-1",
+            draftOf(key) !== "" &&
+              "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/40",
+          )}
+          value={draftOf(key)}
+          onChange={(e) => setDraft(key, e.target.value)}
+          onBlur={() => triggerSave(key)}
+        />
+        <NoteIndicator
+          testId={`follow-up-indicator-${suffix}`}
+          state={indicator(key)}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          data-testid={`follow-up-addressed-${suffix}`}
+          disabled={draftOf(key) === ""}
+          onClick={() => markAddressed(key)}
+        >
+          Feedback addressed
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Clears this feedback note and removes it from the follow-up file.
+        </span>
+      </div>
+    </div>
+  );
+
   // Status editing: optimistic local update, reverted on a failed save;
   // store updates (SSE refetches) adopt the server status.
   const [localStatus, setLocalStatus] = useState<string | null>(null);
@@ -427,19 +488,7 @@ function SpecRow({
             <p data-testid={`spec-description-${spec.id}`} className="text-sm">
               {spec.description}
             </p>
-            <div className="flex items-start gap-2">
-              <AutoGrowTextarea
-                data-testid={`follow-up-desc-${spec.id}`}
-                className="flex-1"
-                value={draftOf("description")}
-                onChange={(e) => setDraft("description", e.target.value)}
-                onBlur={() => triggerSave("description")}
-              />
-              <NoteIndicator
-                testId={`follow-up-indicator-desc-${spec.id}`}
-                state={indicator("description")}
-              />
-            </div>
+            {noteField("description", `follow-up-desc-${spec.id}`, `desc-${spec.id}`)}
             <p
               data-testid={`spec-motivation-${spec.id}`}
               className="text-sm text-muted-foreground"
@@ -447,19 +496,7 @@ function SpecRow({
               <span className="font-medium text-foreground">Why:</span>{" "}
               {spec.motivation}
             </p>
-            <div className="flex items-start gap-2">
-              <AutoGrowTextarea
-                data-testid={`follow-up-motivation-${spec.id}`}
-                className="flex-1"
-                value={draftOf("motivation")}
-                onChange={(e) => setDraft("motivation", e.target.value)}
-                onBlur={() => triggerSave("motivation")}
-              />
-              <NoteIndicator
-                testId={`follow-up-indicator-motivation-${spec.id}`}
-                state={indicator("motivation")}
-              />
-            </div>
+            {noteField("motivation", `follow-up-motivation-${spec.id}`, `motivation-${spec.id}`)}
             <div data-testid={`spec-criteria-${spec.id}`}>
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 Acceptance criteria
@@ -469,19 +506,11 @@ function SpecRow({
                   <ul className="ml-4 list-disc text-sm">
                     <li>{c}</li>
                   </ul>
-                  <div className="flex items-start gap-2">
-                    <AutoGrowTextarea
-                      data-testid={`follow-up-criterion-${spec.id}-${i}`}
-                      className="flex-1"
-                      value={draftOf(`criterion-${i}`)}
-                      onChange={(e) => setDraft(`criterion-${i}`, e.target.value)}
-                      onBlur={() => triggerSave(`criterion-${i}`)}
-                    />
-                    <NoteIndicator
-                      testId={`follow-up-indicator-criterion-${spec.id}-${i}`}
-                      state={indicator(`criterion-${i}`)}
-                    />
-                  </div>
+                  {noteField(
+                    `criterion-${i}`,
+                    `follow-up-criterion-${spec.id}-${i}`,
+                    `criterion-${spec.id}-${i}`,
+                  )}
                 </div>
               ))}
             </div>
@@ -656,18 +685,22 @@ function FilterBar({
   statusFilter,
   taxonomyFilter,
   textQuery,
+  feedbackOnly,
   onStatusFilter,
   onTaxonomyFilter,
   onTextQuery,
+  onFeedbackOnly,
 }: {
   statuses: StatusOption[];
   taxonomyOptions: string[];
   statusFilter: string;
   taxonomyFilter: string;
   textQuery: string;
+  feedbackOnly: boolean;
   onStatusFilter: (value: string) => void;
   onTaxonomyFilter: (value: string) => void;
   onTextQuery: (value: string) => void;
+  onFeedbackOnly: (value: boolean) => void;
 }) {
   // The longest option label ("All taxonomy" plus every taxonomy branch);
   // its rendered width is measured in a hidden span in the same font as the
@@ -757,6 +790,15 @@ function FilterBar({
           </span>
         </label>
       ) : null}
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input
+          data-testid="filter-feedback"
+          type="checkbox"
+          checked={feedbackOnly}
+          onChange={(e) => onFeedbackOnly(e.target.checked)}
+        />
+        Has feedback
+      </label>
       <label className="flex min-w-56 flex-1 items-center gap-2 text-sm">
         <span className="text-muted-foreground">Text</span>
         <Input
@@ -787,11 +829,12 @@ export default function SpecViewer() {
   const [data, setData] = useState<StoreData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
-  // Active filters; "" means no filter for that control. All three apply
+  // Active filters; "" / false means no filter for that control. All four apply
   // together (AND); clearing one restores the list subject to the rest.
   const [statusFilter, setStatusFilter] = useState("");
   const [taxonomyFilter, setTaxonomyFilter] = useState("");
   const [textQuery, setTextQuery] = useState("");
+  const [feedbackOnly, setFeedbackOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -836,9 +879,14 @@ export default function SpecViewer() {
     () => (data ? collectTaxonomyOptions(data) : []),
     [data],
   );
+  const feedbackIds = useMemo(
+    () => new Set((data?.followUps ?? []).filter(hasFeedback).map((f) => f.id)),
+    [data],
+  );
   const filter = useMemo(
-    () => makeFilter(statusFilter, taxonomyFilter, textQuery),
-    [statusFilter, taxonomyFilter, textQuery],
+    () =>
+      makeFilter(statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds),
+    [statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds],
   );
 
   return (
@@ -883,9 +931,11 @@ export default function SpecViewer() {
             statusFilter={statusFilter}
             taxonomyFilter={taxonomyFilter}
             textQuery={textQuery}
+            feedbackOnly={feedbackOnly}
             onStatusFilter={setStatusFilter}
             onTaxonomyFilter={setTaxonomyFilter}
             onTextQuery={setTextQuery}
+            onFeedbackOnly={setFeedbackOnly}
           />
           <SpecTree data={data} filter={filter} />
         </>

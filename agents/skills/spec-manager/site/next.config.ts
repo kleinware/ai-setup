@@ -8,6 +8,9 @@ import type { NextConfig } from "next"
 const root = path.dirname(fileURLToPath(import.meta.url))
 
 const nextConfig: NextConfig = {
+  // `next dev` otherwise rewrites AGENTS.md with a managed agent-rules block
+  // whenever it detects an AI coding agent running it.
+  agentRules: false,
   turbopack: {
     root,
   },

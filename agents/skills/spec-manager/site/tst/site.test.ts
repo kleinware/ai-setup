@@ -1404,3 +1404,69 @@ test(
   },
   180_000,
 );
+
+test(
+  "feedback is highlighted, filterable together with other filters, and clearable via 'Feedback addressed'",
+  async () => {
+    await withServer(async (root) => {
+      const page = await openPage();
+      try {
+        await waitForRowIds(page, FIXTURE_IDS);
+
+        // Fields with saved notes are called out; empty ones are not.
+        const paginatedDesc = page.locator(
+          '[data-testid="follow-up-desc-app_ui_list_items-paginated"]',
+        );
+        expect(await paginatedDesc.getAttribute("data-has-feedback")).toBe("true");
+        expect(
+          await page
+            .locator('[data-testid="follow-up-desc-app_ui_list_items-sorted"]')
+            .getAttribute("data-has-feedback"),
+        ).toBe("false");
+
+        // The feedback filter leaves only specs with feedback under them.
+        await page.locator('[data-testid="filter-feedback"]').check();
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "tools_cli_run_flags-parsed",
+        ]);
+
+        // It combines with the other filters.
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-app-ui");
+        await waitForRowIds(page, ["app_ui_list_items-paginated"]);
+        await selectFilter(page, "filter-taxonomy", "filter-taxonomy-option-all");
+        await waitForRowIds(page, [
+          "app_ui_list_items-paginated",
+          "tools_cli_run_flags-parsed",
+        ]);
+
+        // "Feedback addressed" empties the field and deletes the entry on disk.
+        const id = "app_ui_list_items-paginated";
+        await page.locator(`[data-testid="follow-up-addressed-desc-${id}"]`).click();
+        expect(await paginatedDesc.inputValue()).toBe("");
+        await pollFollowUp(
+          root,
+          (doc) => {
+            const item = fuItem(doc, id);
+            return item !== undefined && !("description" in item) && "motivation" in item;
+          },
+          15_000,
+        );
+
+        // Addressing the rest of the spec's feedback drops it from the filtered list.
+        await page.locator(`[data-testid="follow-up-addressed-motivation-${id}"]`).click();
+        await page.locator(`[data-testid="follow-up-addressed-criterion-${id}-0"]`).click();
+        await page.locator(`[data-testid="follow-up-addressed-criterion-${id}-1"]`).click();
+        await pollFollowUp(root, (doc) => fuItem(doc, id) === undefined, 15_000);
+        await waitForRowIds(page, ["tools_cli_run_flags-parsed"]);
+
+        // Unchecking the filter restores the full list.
+        await page.locator('[data-testid="filter-feedback"]').uncheck();
+        await waitForRowIds(page, FIXTURE_IDS);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
