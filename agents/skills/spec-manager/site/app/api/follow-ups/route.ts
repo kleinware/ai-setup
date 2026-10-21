@@ -6,8 +6,9 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { parse, stringify } from "yaml";
 
-import { projectRoot, readStore } from "@/lib/spec-store";
-import type { FollowUpItem, SpecEntry, StoreData } from "@/lib/spec-types";
+import { normalizeFollowUps, projectRoot, readStore } from "@/lib/spec-store";
+import type { FollowUpItem, NoteSet, SpecEntry, StoreData } from "@/lib/spec-types";
+import { specChange } from "@/lib/spec-types";
 import { atomicWrite } from "@/lib/spec-writer";
 
 export const dynamic = "force-dynamic";
@@ -21,53 +22,45 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-// Keep only items with a string id and only the known fields; criteria keys
-// become numeric strings mapped to string values.
-function normalizeItems(doc: unknown): FollowUpItem[] {
-  const items = (doc as { items?: unknown })?.items;
-  if (!Array.isArray(items)) return [];
-  return items
-    .filter((item) => isPlainObject(item) && typeof item.id === "string")
-    .map((item) => {
-      const criteria = item.acceptance_criteria;
-      return {
-        id: item.id as string,
-        description: typeof item.description === "string" ? item.description : undefined,
-        motivation: typeof item.motivation === "string" ? item.motivation : undefined,
-        acceptance_criteria:
-          criteria != null && typeof criteria === "object" && !Array.isArray(criteria)
-            ? Object.fromEntries(
-                Object.entries(criteria as Record<string, unknown>).map(([k, v]) => [
-                  String(k),
-                  String(v),
-                ]),
-              )
-            : undefined,
-      };
-    });
+// Criterion keys in display order: numeric indexes ascending, then newN keys.
+function sortedCriteria(criteria: Record<string, string>): Record<string, string> {
+  const rank = (k: string) => (k.startsWith("new") ? 1 : 0);
+  const num = (k: string) => Number.parseInt(k.replace(/^new/, ""), 10);
+  const keys = Object.keys(criteria).sort((a, b) => rank(a) - rank(b) || num(a) - num(b));
+  return Object.fromEntries(keys.map((k) => [k, criteria[k]]));
 }
 
-// Item field order: id, description, motivation, acceptance_criteria;
-// criterion keys in numeric ascending order.
+function orderedNotes(notes: NoteSet): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (notes.description !== undefined) out.description = notes.description;
+  if (notes.motivation !== undefined) out.motivation = notes.motivation;
+  if (notes.acceptance_criteria !== undefined) {
+    out.acceptance_criteria = sortedCriteria(notes.acceptance_criteria);
+  }
+  return out;
+}
+
+// Item field order: id, description, motivation, acceptance_criteria, change
+// (the same three note fields, for the spec's proposed change).
 function itemsYaml(items: FollowUpItem[]): string {
   const ordered = items
     .slice()
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((item) => {
-      const out: Record<string, unknown> = { id: item.id };
-      if (item.description !== undefined) out.description = item.description;
-      if (item.motivation !== undefined) out.motivation = item.motivation;
-      if (item.acceptance_criteria !== undefined) {
-        const keys = Object.keys(item.acceptance_criteria).sort(
-          (a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10),
-        );
-        out.acceptance_criteria = Object.fromEntries(
-          keys.map((k) => [k, item.acceptance_criteria![k]]),
-        );
-      }
+      const out: Record<string, unknown> = { id: item.id, ...orderedNotes(item) };
+      if (item.change !== undefined) out.change = orderedNotes(item.change);
       return out;
     });
   return stringify({ items: ordered }, { lineWidth: 100 });
+}
+
+function hasNotes(notes: NoteSet | undefined): boolean {
+  return (
+    notes !== undefined &&
+    (notes.description !== undefined ||
+      notes.motivation !== undefined ||
+      notes.acceptance_criteria !== undefined)
+  );
 }
 
 function criteriaCount(spec: SpecEntry): number {
@@ -101,6 +94,8 @@ export async function POST(request: Request) {
   const field = body.field;
   const value = body.value;
   const index = body.index;
+  const key = body.key;
+  const target = body.target;
   if (typeof id !== "string" || typeof value !== "string") {
     return NextResponse.json({ error: "invalid-body" }, { status: 400 });
   }
@@ -111,12 +106,25 @@ export async function POST(request: Request) {
   if (noteField === undefined) {
     return NextResponse.json({ error: "invalid-field" }, { status: 400 });
   }
-  let criterionIndex: number | undefined;
+  if (target !== undefined && target !== "spec" && target !== "change") {
+    return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+  }
+  const forChange = target === "change";
+  // Spec criteria are addressed by index; change criteria by their
+  // meta.change.acceptance_criteria key ("0", "new1", ...).
+  let criterionKey: string | undefined;
   if (noteField === "criterion") {
-    if (!Number.isInteger(index) || (index as number) < 0) {
-      return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+    if (forChange) {
+      if (typeof key !== "string") {
+        return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+      }
+      criterionKey = key;
+    } else {
+      if (!Number.isInteger(index) || (index as number) < 0) {
+        return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+      }
+      criterionKey = String(index);
     }
-    criterionIndex = index as number;
   }
 
   let data: StoreData;
@@ -129,7 +137,18 @@ export async function POST(request: Request) {
   if (!spec) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
-  if (criterionIndex !== undefined && criterionIndex >= criteriaCount(spec)) {
+  if (forChange) {
+    const change = specChange(spec);
+    if (!change) {
+      return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+    }
+    if (
+      criterionKey !== undefined &&
+      !Object.keys(change.acceptance_criteria ?? {}).includes(criterionKey)
+    ) {
+      return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+    }
+  } else if (criterionKey !== undefined && Number(criterionKey) >= criteriaCount(spec)) {
     return NextResponse.json({ error: "invalid-field" }, { status: 400 });
   }
 
@@ -147,39 +166,38 @@ export async function POST(request: Request) {
           throw e;
         }
       }
-      const items = normalizeItems(doc);
+      const items = normalizeFollowUps(doc);
       let found = items.find((i) => i.id === id);
       if (!found) {
         found = { id };
         items.push(found);
       }
+      const notes: NoteSet = forChange ? (found.change ??= {}) : found;
       if (noteField === "criterion") {
-        const key = String(criterionIndex);
+        const k = criterionKey!;
         if (value === "") {
-          if (found.acceptance_criteria) {
-            delete found.acceptance_criteria[key];
-            if (Object.keys(found.acceptance_criteria).length === 0) {
-              delete found.acceptance_criteria;
+          if (notes.acceptance_criteria) {
+            delete notes.acceptance_criteria[k];
+            if (Object.keys(notes.acceptance_criteria).length === 0) {
+              delete notes.acceptance_criteria;
             }
           }
         } else {
-          found.acceptance_criteria = {
-            ...(found.acceptance_criteria ?? {}),
-            [key]: value,
+          notes.acceptance_criteria = {
+            ...(notes.acceptance_criteria ?? {}),
+            [k]: value,
           };
         }
       } else if (value === "") {
-        delete found[noteField];
+        delete notes[noteField];
       } else {
-        found[noteField] = value;
+        notes[noteField] = value;
       }
+      if (forChange && !hasNotes(found.change)) delete found.change;
 
       // An item with no data left is removed from the file, and the file
       // itself is deleted when it was the last item.
-      const hasData =
-        found.description !== undefined ||
-        found.motivation !== undefined ||
-        found.acceptance_criteria !== undefined;
+      const hasData = hasNotes(found) || hasNotes(found.change);
       if (!hasData) {
         items.splice(items.indexOf(found), 1);
       }

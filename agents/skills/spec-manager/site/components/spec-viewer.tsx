@@ -5,7 +5,7 @@
 // the /api/specs/status endpoint, and auto-saved follow-up notes via the
 // /api/follow-ups endpoint.
 
-import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { RiArrowDownSLine, RiCheckLine } from "@remixicon/react";
 
 import { Badge } from "@/components/ui/badge";
@@ -32,10 +32,13 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "cn";
-import type {
-  FollowUpItem,
-  SpecEntry,
-  StoreData,
+import {
+  type FollowUpItem,
+  type SpecChange,
+  type SpecEntry,
+  type StoreData,
+  changeCriterionKeys,
+  specChange,
 } from "@/lib/spec-types";
 
 type StatusOption = { name: string; description: string };
@@ -67,7 +70,7 @@ function buildTree(specs: SpecEntry[], layers: string[]): GroupNode {
 
 // A spec matches the active filters when it matches every one of them:
 // status (when set), taxonomy branch (when set), text query (when set), and
-// having feedback (when set).
+// having feedback (when set), having a proposed change (when set).
 type SpecFilter = (spec: SpecEntry) => boolean;
 
 function makeFilter(
@@ -76,10 +79,12 @@ function makeFilter(
   query: string,
   feedbackOnly: boolean,
   feedbackIds: Set<string>,
+  changeOnly: boolean,
 ): SpecFilter {
   const needle = query.trim().toLowerCase();
   return (spec) => {
     if (feedbackOnly && !feedbackIds.has(spec.id)) return false;
+    if (changeOnly && !specChange(spec)) return false;
     if (status !== "" && spec.status !== status) return false;
     if (taxonomy !== "") {
       const prefix = taxonomy.split("/").join("_") + "_";
@@ -92,6 +97,13 @@ function makeFilter(
         spec.motivation,
         ...criteriaList(spec.acceptance_criteria),
       ];
+      const change = specChange(spec);
+      if (change) {
+        fields.push(change.description ?? "", change.motivation ?? "");
+        for (const v of Object.values(change.acceptance_criteria ?? {})) {
+          if (typeof v === "string") fields.push(v);
+        }
+      }
       if (!fields.some((f) => f.toLowerCase().includes(needle))) return false;
     }
     return true;
@@ -156,6 +168,10 @@ type NoteField = "description" | "motivation" | "criterion";
 type FieldDef = {
   field: NoteField;
   index?: number;
+  // Set for notes on the spec's proposed change (meta.change): the
+  // criterion is addressed by its change key ("0", "new1", ...) instead.
+  target?: "change";
+  criterionKey?: string;
   key: string;
   server: string;
 };
@@ -207,7 +223,141 @@ function hasFeedback(item: FollowUpItem): boolean {
   return (
     !!item.description ||
     !!item.motivation ||
-    Object.values(item.acceptance_criteria ?? {}).some((v) => v !== "")
+    Object.values(item.acceptance_criteria ?? {}).some((v) => v !== "") ||
+    (item.change !== undefined && hasFeedback({ id: item.id, ...item.change }))
+  );
+}
+
+// The spec's proposed change (meta.change), shown like a spec of its own:
+// description and motivation replacements and the criteria deltas, each with
+// its own feedback note.
+function ChangeSection({
+  specId,
+  change,
+  noteField,
+}: {
+  specId: string;
+  change: SpecChange;
+  noteField: (key: string, textareaId: string, suffix: string) => ReactNode;
+}) {
+  const criteria = change.acceptance_criteria ?? {};
+
+  // change_status editing, like the spec status: optimistic local update,
+  // reverted on a failed save; store updates adopt the server value.
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
+  useEffect(() => {
+    setLocalStatus(null);
+  }, [change]);
+  const changeStatus = localStatus ?? change.change_status;
+  const handleStatusChange = (next: string) => {
+    if (next === changeStatus) return;
+    setLocalStatus(next);
+    fetch("/api/specs/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: specId, status: next, target: "change" }),
+    })
+      .then((res) => {
+        if (!res.ok) setLocalStatus(null);
+      })
+      .catch(() => {
+        setLocalStatus(null);
+      });
+  };
+  return (
+    <div
+      data-testid={`spec-change-${specId}`}
+      className="mt-3 space-y-2 rounded-md border border-dashed p-3"
+    >
+      <div
+        data-testid={`spec-change-status-area-${specId}`}
+        className="flex flex-wrap items-center gap-3"
+      >
+        <span className="text-sm font-medium">Proposed change</span>
+        <RadioGroup
+          data-testid={`change-status-radio-${specId}`}
+          value={changeStatus}
+          onValueChange={(v: string) => handleStatusChange(v)}
+          className="flex w-fit items-center gap-3"
+        >
+          {["pending", "approved"].map((name) => (
+            <label
+              key={name}
+              htmlFor={`change-status-opt-${specId}-${name}`}
+              className="flex cursor-pointer items-center gap-2 text-sm"
+            >
+              <RadioGroupItem
+                id={`change-status-opt-${specId}-${name}`}
+                data-testid={`change-status-option-${specId}-${name}`}
+                value={name}
+              />
+              {name}
+            </label>
+          ))}
+        </RadioGroup>
+        {changeStatus ? (
+          <Badge variant="secondary" data-testid={`spec-change-status-${specId}`}>
+            {changeStatus}
+          </Badge>
+        ) : null}
+      </div>
+      {change.description !== undefined ? (
+        <>
+          <p data-testid={`spec-change-description-${specId}`} className="text-sm">
+            {change.description}
+          </p>
+          {noteField(
+            "change-description",
+            `follow-up-change-desc-${specId}`,
+            `change-desc-${specId}`,
+          )}
+        </>
+      ) : null}
+      {change.motivation !== undefined ? (
+        <>
+          <p
+            data-testid={`spec-change-motivation-${specId}`}
+            className="text-sm text-muted-foreground"
+          >
+            <span className="font-medium text-foreground">Why:</span>{" "}
+            {change.motivation}
+          </p>
+          {noteField(
+            "change-motivation",
+            `follow-up-change-motivation-${specId}`,
+            `change-motivation-${specId}`,
+          )}
+        </>
+      ) : null}
+      {changeCriterionKeys(change).length > 0 ? (
+        <div data-testid={`spec-change-criteria-${specId}`}>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Acceptance criteria changes
+          </p>
+          {changeCriterionKeys(change).map((k) => {
+            const v = criteria[k];
+            const label = k.startsWith("new") ? "add" : `#${k}`;
+            return (
+              <div key={k} className="space-y-1">
+                <ul className="ml-4 list-disc text-sm">
+                  <li>
+                    <span className="mr-1 font-mono text-xs text-muted-foreground">
+                      {label}
+                    </span>
+                    {v === false ? <em>remove criterion</em> : v}
+                  </li>
+                </ul>
+                {noteField(
+                  `change-criterion-${k}`,
+                  `follow-up-change-criterion-${specId}-${k}`,
+                  `change-criterion-${specId}-${k}`,
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -220,6 +370,7 @@ function SpecRow({
   note?: FollowUpItem;
   statuses: StatusOption[];
 }) {
+  const change = useMemo(() => specChange(spec), [spec]);
   const fieldDefs = useMemo<FieldDef[]>(() => {
     const defs: FieldDef[] = [
       {
@@ -241,8 +392,33 @@ function SpecRow({
         server: note?.acceptance_criteria?.[String(i)] ?? "",
       });
     });
+    if (change) {
+      defs.push(
+        {
+          field: "description",
+          target: "change",
+          key: "change-description",
+          server: note?.change?.description ?? "",
+        },
+        {
+          field: "motivation",
+          target: "change",
+          key: "change-motivation",
+          server: note?.change?.motivation ?? "",
+        },
+      );
+      for (const k of changeCriterionKeys(change)) {
+        defs.push({
+          field: "criterion",
+          target: "change",
+          criterionKey: k,
+          key: `change-criterion-${k}`,
+          server: note?.change?.acceptance_criteria?.[k] ?? "",
+        });
+      }
+    }
     return defs;
-  }, [spec.acceptance_criteria, note]);
+  }, [spec.acceptance_criteria, note, change]);
 
   const [fields, setFields] = useState<Record<string, FieldState>>(() => {
     const init: Record<string, FieldState> = {};
@@ -312,6 +488,8 @@ function SpecRow({
       value,
     };
     if (def.index !== undefined) payload.index = def.index;
+    if (def.target !== undefined) payload.target = def.target;
+    if (def.criterionKey !== undefined) payload.key = def.criterionKey;
     fetch("/api/follow-ups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -514,6 +692,13 @@ function SpecRow({
                 </div>
               ))}
             </div>
+            {change ? (
+              <ChangeSection
+                specId={spec.id}
+                change={change}
+                noteField={noteField}
+              />
+            ) : null}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -686,10 +871,12 @@ function FilterBar({
   taxonomyFilter,
   textQuery,
   feedbackOnly,
+  changeOnly,
   onStatusFilter,
   onTaxonomyFilter,
   onTextQuery,
   onFeedbackOnly,
+  onChangeOnly,
 }: {
   statuses: StatusOption[];
   taxonomyOptions: string[];
@@ -697,10 +884,12 @@ function FilterBar({
   taxonomyFilter: string;
   textQuery: string;
   feedbackOnly: boolean;
+  changeOnly: boolean;
   onStatusFilter: (value: string) => void;
   onTaxonomyFilter: (value: string) => void;
   onTextQuery: (value: string) => void;
   onFeedbackOnly: (value: boolean) => void;
+  onChangeOnly: (value: boolean) => void;
 }) {
   // The longest option label ("All taxonomy" plus every taxonomy branch);
   // its rendered width is measured in a hidden span in the same font as the
@@ -799,6 +988,15 @@ function FilterBar({
         />
         Has feedback
       </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input
+          data-testid="filter-change"
+          type="checkbox"
+          checked={changeOnly}
+          onChange={(e) => onChangeOnly(e.target.checked)}
+        />
+        Has proposed change
+      </label>
       <label className="flex min-w-56 flex-1 items-center gap-2 text-sm">
         <span className="text-muted-foreground">Text</span>
         <Input
@@ -829,12 +1027,13 @@ export default function SpecViewer() {
   const [data, setData] = useState<StoreData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
-  // Active filters; "" / false means no filter for that control. All four apply
+  // Active filters; "" / false means no filter for that control. All five apply
   // together (AND); clearing one restores the list subject to the rest.
   const [statusFilter, setStatusFilter] = useState("");
   const [taxonomyFilter, setTaxonomyFilter] = useState("");
   const [textQuery, setTextQuery] = useState("");
   const [feedbackOnly, setFeedbackOnly] = useState(false);
+  const [changeOnly, setChangeOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -885,8 +1084,15 @@ export default function SpecViewer() {
   );
   const filter = useMemo(
     () =>
-      makeFilter(statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds),
-    [statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds],
+      makeFilter(
+        statusFilter,
+        taxonomyFilter,
+        textQuery,
+        feedbackOnly,
+        feedbackIds,
+        changeOnly,
+      ),
+    [statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds, changeOnly],
   );
 
   return (
@@ -932,10 +1138,12 @@ export default function SpecViewer() {
             taxonomyFilter={taxonomyFilter}
             textQuery={textQuery}
             feedbackOnly={feedbackOnly}
+            changeOnly={changeOnly}
             onStatusFilter={setStatusFilter}
             onTaxonomyFilter={setTaxonomyFilter}
             onTextQuery={setTextQuery}
             onFeedbackOnly={setFeedbackOnly}
+            onChangeOnly={setChangeOnly}
           />
           <SpecTree data={data} filter={filter} />
         </>

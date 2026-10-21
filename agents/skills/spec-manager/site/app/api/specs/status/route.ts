@@ -1,5 +1,5 @@
-// POST /api/specs/status — sets the status of the spec with the given id and
-// rewrites the leaf file containing it in the CLI's on-disk format.
+// POST /api/specs/status — sets the status of the spec with the given id (or,
+// with target "change", the change_status of its meta.change) and rewrites the leaf file containing it in the CLI's on-disk format.
 
 import { promises as fsp } from "node:fs";
 import path from "node:path";
@@ -11,6 +11,8 @@ import type { StoreData } from "@/lib/spec-types";
 import { atomicWrite, specListYaml } from "@/lib/spec-writer";
 
 export const dynamic = "force-dynamic";
+
+const CHANGE_STATUSES = ["pending", "approved"];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -68,9 +70,14 @@ export async function POST(request: Request) {
   }
   const id = body.id;
   const status = body.status;
+  const targetKind = body.target;
   if (typeof id !== "string" || typeof status !== "string") {
     return NextResponse.json({ error: "invalid-body" }, { status: 400 });
   }
+  if (targetKind !== undefined && targetKind !== "spec" && targetKind !== "change") {
+    return NextResponse.json({ error: "invalid-body" }, { status: 400 });
+  }
+  const forChange = targetKind === "change";
 
   let data: StoreData;
   try {
@@ -79,8 +86,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "io-error" }, { status: 500 });
   }
 
-  const configured =
-    data.config && Array.isArray(data.config.status)
+  const configured = forChange
+    ? CHANGE_STATUSES
+    : data.config && Array.isArray(data.config.status)
       ? data.config.status.map((s) => s.name)
       : [];
   if (!configured.includes(status)) {
@@ -112,8 +120,17 @@ export async function POST(request: Request) {
   if (!target) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
-  // Set in place: keeps the key's position, appends it if absent.
-  target.status = status;
+  if (forChange) {
+    const meta = target.meta;
+    const change = isPlainObject(meta) ? meta.change : undefined;
+    if (!isPlainObject(change)) {
+      return NextResponse.json({ error: "no-change" }, { status: 400 });
+    }
+    change.change_status = status;
+  } else {
+    // Set in place: keeps the key's position, appends it if absent.
+    target.status = status;
+  }
   entries.sort((a, b) => {
     const x = String(a.id);
     const y = String(b.id);

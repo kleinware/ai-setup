@@ -1,4 +1,65 @@
 specs:
+  - id: tooling_spec-manager_site_change-filter
+    description: The filter bar has a 'Has proposed change' toggle that leaves only specs whose meta
+      carries a supported change (meta.change), and it combines with the status, taxonomy, text, and
+      feedback filters.
+    motivation: The user reviews just the specs with proposed changes without scrolling the whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs that have a meta.change.
+      - The toggle applies together with the status, taxonomy, text, and feedback filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+    status: done
+
+  - id: tooling_spec-manager_site_change-notes
+    description: "Every field shown in a Proposed change section (description, motivation, and each
+      acceptance criterion delta) has the same auto-saving follow-up note textarea, indicator,
+      highlight, and 'Feedback addressed' button as a spec field, and its notes are stored under a
+      change: key on the spec's item in spec/spec_follow_up.yaml."
+    motivation: Proposed changes need the same discussion with the spec curator agent as the spec
+      itself, and keeping their notes separate from the spec's notes shows which one the feedback is
+      about.
+    acceptance_criteria:
+      - "Typing in a change note saves it to the change: object of the spec's item in
+        spec/spec_follow_up.yaml, with the same pending and saved indicators as spec notes."
+      - Change criterion notes are keyed by the change's acceptance_criteria key (0, 1, new1, ...),
+        and a key that is not in the spec's meta.change is rejected.
+      - Notes on the change never alter or overwrite the spec's own notes, and the reverse.
+      - "Clearing a change note, or pressing 'Feedback addressed', removes it from the change:
+        object, and the change: object when it is empty."
+    status: done
+
+  - id: tooling_spec-manager_site_change-status
+    description: The Proposed change section shows its change_status as radio buttons (pending,
+      approved), like a spec's status, and selecting one saves it to the spec's
+      meta.change.change_status in its leaf file.
+    motivation: The user approves or reverts a proposed change directly in the site, so it becomes
+      eligible for implementation without running the CLI.
+    acceptance_criteria:
+      - The section shows a pending and an approved radio button with the current change_status
+        selected, plus its badge.
+      - Selecting the other option updates the badge right away and sets meta.change.change_status
+        in the spec's leaf file, leaving every other field of the spec unchanged.
+      - A failed save reverts the selection to the stored change_status.
+      - Only pending and approved are accepted, and a spec without a meta.change is rejected.
+    status: done
+
+  - id: tooling_spec-manager_site_change-view
+    description: "A spec whose meta carries a supported change (meta.change) shows a 'Proposed change'
+      section under the spec, rendered like a spec of its own: the change_status badge, the
+      replacement description and motivation when present, and each acceptance_criteria delta
+      labeled as a replacement (#N), an addition (add), or a removal."
+    motivation: Reviewers see proposed changes to accepted or done specs in the same place as the spec,
+      so they can read and react to them without opening the spec files.
+    acceptance_criteria:
+      - A spec with a meta.change shows a Proposed change section with its change_status badge; a
+        spec without one shows none.
+      - Only the supported change fields (description, motivation, acceptance_criteria,
+        change_status) are rendered; description and motivation appear only when the change replaces
+        them.
+      - Each acceptance_criteria key is listed in order (numeric indexes ascending, then new1, new2,
+        ...), a false value being shown as a removal.
+    status: done
+
   - id: tooling_spec-manager_site_feedback-addressed
     description: Below each follow-up note textarea a 'Feedback addressed' button, with help text saying
       it clears the note, empties that textarea and deletes its entry from spec/spec_follow_up.yaml
@@ -14,15 +75,29 @@ specs:
 
   - id: tooling_spec-manager_site_feedback-filter
     description: The filter bar has a 'Has feedback' toggle that leaves only specs with at least one
-      follow-up note in spec/spec_follow_up.yaml (description, motivation, or any acceptance
-      criterion), and it combines with the status, taxonomy, and text filters.
+      follow-up note in spec/spec_follow_up.yaml (description, motivation, any acceptance criterion,
+      or any note on the spec's proposed change), and it combines with the status, taxonomy, and
+      text filters.
     motivation: The user reviews just the specs they left feedback on, for example to walk through them
       with the spec curator agent, without scrolling the whole list.
     acceptance_criteria:
-      - Turning on the toggle leaves only specs that have a follow-up note under them.
+      - Turning on the toggle leaves only specs that have a follow-up note under them, including
+        notes on their proposed change.
       - The toggle applies together with the status, taxonomy, and text filters.
       - Turning the toggle off restores the list subject to the remaining filters.
     status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: The filter bar has a 'Has feedback' toggle that leaves only specs with at least one
+              follow-up note in spec/spec_follow_up.yaml (description, motivation, any acceptance
+              criterion, or any note on the spec's proposed change), and it combines with the
+              status, taxonomy, and text filters.
+            acceptance_criteria:
+              "0": Turning on the toggle leaves only specs that have a follow-up note under them, including notes
+                on their proposed change.
+            change_status: approved
 
   - id: tooling_spec-manager_site_feedback-highlight
     description: A follow-up note textarea that holds text is visually called out (amber border and
@@ -55,20 +130,45 @@ specs:
   - id: tooling_spec-manager_site_follow-up-file
     description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
       an id (required, matching the spec id), an optional description string, an optional motivation
-      string, and an optional acceptance_criteria object with numeric index keys and string values;
-      items are sorted by spec id; an id appears in the file only while it carries at least one
-      follow-up field, and the file is deleted when its last item is removed."
+      string, an optional acceptance_criteria object with numeric index keys and string values, and
+      an optional change object holding the same three note fields for the spec's proposed change
+      (its acceptance_criteria keyed by the meta.change criterion keys such as 0 or new1); items are
+      sorted by spec id; an id appears in the file only while it carries at least one follow-up
+      field, and the file is deleted when its last item is removed."
     motivation: A stable, predictable file format lets the spec curator agent read the user's feedback
       and discuss it without parsing ad-hoc structure.
     acceptance_criteria:
       - The file's top-level key is items:, a list of objects, and each object's id matches an
         existing spec id.
-      - Only id is required; description and motivation are optional strings, and
-        acceptance_criteria is an optional object mapping numeric index keys to string values.
+      - Only id is required; description and motivation are optional strings, acceptance_criteria is
+        an optional object mapping numeric index keys to string values, and change is an optional
+        object with the same optional fields, whose acceptance_criteria keys are the keys of the
+        spec's meta.change.acceptance_criteria.
       - The items list is sorted by spec id.
-      - An id's item is removed from the file when all of its follow-up fields are cleared.
+      - An id's item is removed from the file when all of its follow-up fields, including those
+        under change, are cleared.
       - When the last item is removed, spec/spec_follow_up.yaml is deleted.
     status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
+              an id (required, matching the spec id), an optional description string, an optional
+              motivation string, an optional acceptance_criteria object with numeric index keys and
+              string values, and an optional change object holding the same three note fields for
+              the spec's proposed change (its acceptance_criteria keyed by the meta.change criterion
+              keys such as 0 or new1); items are sorted by spec id; an id appears in the file only
+              while it carries at least one follow-up field, and the file is deleted when its last
+              item is removed."
+            acceptance_criteria:
+              "1": Only id is required; description and motivation are optional strings, acceptance_criteria is an
+                optional object mapping numeric index keys to string values, and change is an
+                optional object with the same optional fields, whose acceptance_criteria keys are
+                the keys of the spec's meta.change.acceptance_criteria.
+              "3": An id's item is removed from the file when all of its follow-up fields, including those under
+                change, are cleared.
+            change_status: approved
 
   - id: tooling_spec-manager_site_follow-up-notes
     description: Below each spec's description, motivation, and each acceptance criterion, a shadcn

@@ -6,7 +6,7 @@ import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 
-import type { FollowUpItem, SpecEntry, StoreConfig, StoreData } from "./spec-types";
+import type { FollowUpItem, NoteSet, SpecEntry, StoreConfig, StoreData } from "./spec-types";
 
 export function projectRoot(): string {
   return process.env.SPEC_ROOT ?? process.cwd();
@@ -23,26 +23,37 @@ function normalizeCriteria(value: unknown): string | string[] {
   return "";
 }
 
-function normalizeFollowUps(doc: unknown): FollowUpItem[] {
+export function normalizeNoteSet(raw: Record<string, unknown>): NoteSet {
+  const criteria = raw.acceptance_criteria;
+  return {
+    description: asString(raw.description),
+    motivation: asString(raw.motivation),
+    acceptance_criteria:
+      criteria != null && typeof criteria === "object" && !Array.isArray(criteria)
+        ? Object.fromEntries(
+            Object.entries(criteria as Record<string, unknown>).map(([k, v]) => [
+              String(k),
+              String(v),
+            ]),
+          )
+        : undefined,
+  };
+}
+
+export function normalizeFollowUps(doc: unknown): FollowUpItem[] {
   const items = (doc as { items?: unknown })?.items;
   if (!Array.isArray(items)) return [];
   return items
     .filter((item) => item != null && typeof (item as { id?: unknown }).id === "string")
     .map((item) => {
       const raw = item as Record<string, unknown>;
-      const criteria = raw.acceptance_criteria;
+      const change = raw.change;
       return {
         id: raw.id as string,
-        description: asString(raw.description),
-        motivation: asString(raw.motivation),
-        acceptance_criteria:
-          criteria != null && typeof criteria === "object" && !Array.isArray(criteria)
-            ? Object.fromEntries(
-                Object.entries(criteria as Record<string, unknown>).map(([k, v]) => [
-                  String(k),
-                  String(v),
-                ]),
-              )
+        ...normalizeNoteSet(raw),
+        change:
+          change != null && typeof change === "object" && !Array.isArray(change)
+            ? normalizeNoteSet(change as Record<string, unknown>)
             : undefined,
       };
     });
