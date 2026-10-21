@@ -228,17 +228,23 @@ specs:
 
   - id: tooling_spec-manager_site_grouped-view
     description: The page displays all specs sorted by id and grouped by their taxonomy; each named
-      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it, and
-      each spec item can be collapsed by its id to show only the spec id with its details hidden.
+      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it, each
+      spec item can be collapsed by clicking an arrow icon beside its id to show only the spec id
+      with its details hidden, and clicking the spec id copies it to the clipboard.
     motivation: The taxonomy gives the user a navigable outline of the store, and collapsing - by layer
-      or by individual spec - keeps the view manageable as the store grows.
+      or by individual spec - keeps the view manageable as the store grows; copying an id with one
+      click makes it easy to reference a spec elsewhere.
     acceptance_criteria:
       - Spec ids are listed in ascending order by id.
       - Specs are grouped under their taxonomy path (area, component, section).
       - Collapsing a layer hides all spec ids under it, and expanding restores them.
-      - Collapsing a spec item by its id shows only the spec id with none of its details (status,
-        description, motivation, acceptance criteria, follow-up notes), and expanding restores the
+      - Each spec item has an arrow icon beside its id, like the taxonomy layers; clicking the arrow
+        collapses the item to show only the spec id with none of its details (status, description,
+        motivation, acceptance criteria, follow-up notes), and clicking it again restores the
         details; spec items are expanded by default.
+      - Clicking the spec id itself does not collapse or expand the item.
+      - Clicking the spec id copies the id text to the clipboard and shows a brief toast next to the
+        cursor saying the spec id was copied.
     status: done
 
   - id: tooling_spec-manager_site_launch

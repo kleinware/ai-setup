@@ -4,6 +4,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
 
 ## Conventions
 
+- Only commit code when the user has explicitly instructed it; otherwise leave changes uncommitted in the working tree.
 - Commit messages must start with one of the allowed prefixes (enforced by `.githooks/commit-msg`; bypass with `--no-verify`):
   - `agents: ` — agent skills and subagents under `agents/`
   - `project: ` — repo-level tooling and docs (`.githooks/`, `setup.sh`, `AGENTS.md`, `README.md`)

@@ -694,6 +694,24 @@ function SpecRow({
       });
   };
 
+  // Click-to-copy for the spec id, with a brief toast at the cursor.
+  const [copyToast, setCopyToast] = useState<{ x: number; y: number } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+  const copyId = (e: React.MouseEvent) => {
+    const { clientX: x, clientY: y } = e;
+    navigator.clipboard
+      ?.writeText(id)
+      .then(() => {
+        setCopyToast({ x, y });
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setCopyToast(null), 1500);
+      })
+      .catch(() => {});
+  };
+
   const criteria = spec ? criteriaList(spec.acceptance_criteria) : [];
 
   // Notes whose element is gone, shown (while they still hold text) with the
@@ -709,18 +727,34 @@ function SpecRow({
   return (
     <Item data-testid={`spec-row-${id}`} className="py-4">
       <Collapsible defaultOpen className="w-full">
-        <CollapsibleTrigger
-          data-testid={`spec-toggle-${id}`}
-          className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-muted dark:hover:bg-muted/50"
-        >
-          <ItemTitle
-            data-testid={`spec-id-${id}`}
-            className="font-mono text-base"
+        <div className="flex w-full items-center gap-2 px-1 py-1">
+          <CollapsibleTrigger
+            data-testid={`spec-toggle-${id}`}
+            aria-label={`Toggle ${id}`}
+            className="group flex shrink-0 cursor-pointer items-center rounded-md p-1 hover:bg-muted dark:hover:bg-muted/50"
           >
-            {id}
-          </ItemTitle>
-          <RiArrowDownSLine className="ml-auto size-4 shrink-0 text-muted-foreground data-[panel-open]:rotate-180 transition-transform" />
-        </CollapsibleTrigger>
+            <RiArrowDownSLine className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
+          </CollapsibleTrigger>
+          <button
+            type="button"
+            data-testid={`spec-id-${id}`}
+            title="Click to copy spec ID"
+            onClick={copyId}
+            className="cursor-pointer rounded-md px-1 text-left hover:bg-muted dark:hover:bg-muted/50"
+          >
+            <ItemTitle className="font-mono text-base">{id}</ItemTitle>
+          </button>
+        </div>
+        {copyToast && (
+          <div
+            data-testid={`spec-copied-${id}`}
+            role="status"
+            style={{ left: copyToast.x + 12, top: copyToast.y + 12 }}
+            className="pointer-events-none fixed z-50 rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md"
+          >
+            Copied {id}
+          </div>
+        )}
         <CollapsibleContent>
           {spec ? (
           <div

@@ -1206,6 +1206,28 @@ test(
   180_000,
 );
 
+test(
+  "T18b [tooling_spec-manager_site_grouped-view] clicking a spec id copies it to the clipboard with a toast and does not toggle the item",
+  async () => {
+    await withServer(async () => {
+      const page = await openPage();
+      try {
+        await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+        const id = "app_ui_list_items-paginated";
+        await page.locator(`[data-testid="spec-id-${id}"]`).click();
+        await page.locator(`[data-testid="spec-copied-${id}"]`).waitFor();
+        expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(id);
+        expect(
+          await page.locator(`[data-testid="spec-toggle-${id}"]`).getAttribute("aria-expanded"),
+        ).toBe("true");
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
 // --- Spike: tooling_spec-manager_site_filters trigger width (T19) -----------
 
 test(
