@@ -114,6 +114,24 @@ function makeFilter(
   };
 }
 
+// Feedback whose spec no longer exists has no spec to filter, so it is kept
+// by the filters that can apply to an id alone: taxonomy branch and text
+// query. Status, proposed-change, and dirty filters hide it.
+function makeOrphanFilter(
+  status: string,
+  taxonomy: string,
+  query: string,
+  changeOnly: boolean,
+  dirtyOnly: boolean,
+): (id: string) => boolean {
+  const needle = query.trim().toLowerCase();
+  return (id) => {
+    if (status !== "" || changeOnly || dirtyOnly) return false;
+    if (taxonomy !== "" && !id.startsWith(taxonomy.split("/").join("_") + "_")) return false;
+    return needle === "" || id.toLowerCase().includes(needle);
+  };
+}
+
 // Every taxonomy branch in the store: each area, and each deeper
 // component/section branch present in the configured structure.
 function structureBranches(
@@ -178,6 +196,11 @@ type FieldDef = {
   criterionKey?: string;
   key: string;
   server: string;
+  // Set when the element this note was written for no longer exists (the
+  // criterion index is out of range, the proposed change or its field is
+  // gone, or the whole spec is gone): the label to show above the note, and
+  // the ids the note's textarea and controls use.
+  orphan?: { label: string; testId: string; suffix: string };
 };
 
 type FieldState = { draft: string; saved: string };
@@ -365,64 +388,124 @@ function ChangeSection({
   );
 }
 
+// A spec's row. `spec` is undefined for feedback whose spec id no longer
+// exists: the row then shows just the id and the orphaned feedback notes.
 function SpecRow({
+  id,
   spec,
   note,
   statuses,
 }: {
-  spec: SpecEntry;
+  id: string;
+  spec?: SpecEntry;
   note?: FollowUpItem;
   statuses: StatusOption[];
 }) {
-  const change = useMemo(() => specChange(spec), [spec]);
+  const change = useMemo(() => (spec ? specChange(spec) : undefined), [spec]);
   const fieldDefs = useMemo<FieldDef[]>(() => {
     const defs: FieldDef[] = [
       {
         field: "description",
         key: "description",
         server: note?.description ?? "",
+        orphan: spec
+          ? undefined
+          : { label: "Description", testId: `follow-up-desc-${id}`, suffix: `desc-${id}` },
       },
       {
         field: "motivation",
         key: "motivation",
         server: note?.motivation ?? "",
+        orphan: spec
+          ? undefined
+          : {
+              label: "Why",
+              testId: `follow-up-motivation-${id}`,
+              suffix: `motivation-${id}`,
+            },
       },
     ];
-    criteriaList(spec.acceptance_criteria).forEach((_, i) => {
+    const criteriaCount = spec ? criteriaList(spec.acceptance_criteria).length : 0;
+    for (let i = 0; i < criteriaCount; i++) {
       defs.push({
         field: "criterion",
         index: i,
         key: `criterion-${i}`,
         server: note?.acceptance_criteria?.[String(i)] ?? "",
       });
-    });
-    if (change) {
-      defs.push(
-        {
-          field: "description",
-          target: "change",
-          key: "change-description",
-          server: note?.change?.description ?? "",
+    }
+    // Criterion feedback past the end of the list (or for a missing spec).
+    for (const [k, v] of Object.entries(note?.acceptance_criteria ?? {})) {
+      if (!/^\d+$/.test(k) || Number(k) < criteriaCount) continue;
+      defs.push({
+        field: "criterion",
+        index: Number(k),
+        key: `criterion-${k}`,
+        server: v,
+        orphan: {
+          label: `Acceptance criterion #${k}`,
+          testId: `follow-up-criterion-${id}-${k}`,
+          suffix: `criterion-${id}-${k}`,
         },
-        {
-          field: "motivation",
-          target: "change",
-          key: "change-motivation",
-          server: note?.change?.motivation ?? "",
+      });
+    }
+    defs.push(
+      {
+        field: "description",
+        target: "change",
+        key: "change-description",
+        server: note?.change?.description ?? "",
+        orphan:
+          change?.description !== undefined
+            ? undefined
+            : {
+                label: "Proposed change description",
+                testId: `follow-up-change-desc-${id}`,
+                suffix: `change-desc-${id}`,
+              },
+      },
+      {
+        field: "motivation",
+        target: "change",
+        key: "change-motivation",
+        server: note?.change?.motivation ?? "",
+        orphan:
+          change?.motivation !== undefined
+            ? undefined
+            : {
+                label: "Proposed change why",
+                testId: `follow-up-change-motivation-${id}`,
+                suffix: `change-motivation-${id}`,
+              },
+      },
+    );
+    const liveKeys = change ? changeCriterionKeys(change) : [];
+    for (const k of liveKeys) {
+      defs.push({
+        field: "criterion",
+        target: "change",
+        criterionKey: k,
+        key: `change-criterion-${k}`,
+        server: note?.change?.acceptance_criteria?.[k] ?? "",
+      });
+    }
+    for (const [k, v] of Object.entries(note?.change?.acceptance_criteria ?? {})) {
+      if (liveKeys.includes(k)) continue;
+      defs.push({
+        field: "criterion",
+        target: "change",
+        criterionKey: k,
+        key: `change-criterion-${k}`,
+        server: v,
+        orphan: {
+          label: `Proposed change criterion ${k.startsWith("new") ? "add" : `#${k}`}`,
+          testId: `follow-up-change-criterion-${id}-${k}`,
+          suffix: `change-criterion-${id}-${k}`,
         },
-      );
-      for (const k of changeCriterionKeys(change)) {
-        defs.push({
-          field: "criterion",
-          target: "change",
-          criterionKey: k,
-          key: `change-criterion-${k}`,
-          server: note?.change?.acceptance_criteria?.[k] ?? "",
-        });
-      }
+      });
     }
     return defs;
-  }, [spec.acceptance_criteria, note, change]);
+  }, [spec, id, note, change]);
 
   const [fields, setFields] = useState<Record<string, FieldState>>(() => {
     const init: Record<string, FieldState> = {};
@@ -487,7 +570,7 @@ function SpecRow({
     if (!st || !def || value === st.saved || inFlight.current[key]) return;
     inFlight.current[key] = true;
     const payload: Record<string, unknown> = {
-      id: spec.id,
+      id,
       field: def.field,
       value,
     };
@@ -593,7 +676,7 @@ function SpecRow({
   useEffect(() => {
     setLocalStatus(null);
   }, [spec]);
-  const status = localStatus ?? spec.status;
+  const status = localStatus ?? spec?.status;
 
   const handleStatusChange = (next: string) => {
     if (next === status) return;
@@ -601,7 +684,7 @@ function SpecRow({
     fetch("/api/specs/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: spec.id, status: next }),
+      body: JSON.stringify({ id, status: next }),
     })
       .then((res) => {
         if (!res.ok) setLocalStatus(null);
@@ -611,32 +694,43 @@ function SpecRow({
       });
   };
 
-  const criteria = criteriaList(spec.acceptance_criteria);
+  const criteria = spec ? criteriaList(spec.acceptance_criteria) : [];
+
+  // Notes whose element is gone, shown (while they still hold text) with the
+  // missing element's value as "<missing>"; for a missing spec only the
+  // note labels are shown.
+  const orphanDefs = fieldDefs.filter(
+    (d) =>
+      d.orphan &&
+      (fields[d.key]?.draft !== "" || fields[d.key]?.saved !== "") &&
+      fields[d.key] !== undefined,
+  );
 
   return (
-    <Item data-testid={`spec-row-${spec.id}`} className="py-4">
+    <Item data-testid={`spec-row-${id}`} className="py-4">
       <Collapsible defaultOpen className="w-full">
         <CollapsibleTrigger
-          data-testid={`spec-toggle-${spec.id}`}
+          data-testid={`spec-toggle-${id}`}
           className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-muted dark:hover:bg-muted/50"
         >
           <ItemTitle
-            data-testid={`spec-id-${spec.id}`}
+            data-testid={`spec-id-${id}`}
             className="font-mono text-base"
           >
-            {spec.id}
+            {id}
           </ItemTitle>
           <RiArrowDownSLine className="ml-auto size-4 shrink-0 text-muted-foreground data-[panel-open]:rotate-180 transition-transform" />
         </CollapsibleTrigger>
         <CollapsibleContent>
+          {spec ? (
           <div
-            data-testid={`spec-status-area-${spec.id}`}
+            data-testid={`spec-status-area-${id}`}
             className="flex flex-wrap items-center gap-3 px-3 pt-1"
           >
             <span className="shrink-0 text-sm text-muted-foreground">Status</span>
             {statuses.length > 0 ? (
               <RadioGroup
-                data-testid={`status-radio-${spec.id}`}
+                data-testid={`status-radio-${id}`}
                 value={status}
                 onValueChange={(v: string) => handleStatusChange(v)}
                 className="flex w-fit items-center gap-3"
@@ -644,12 +738,12 @@ function SpecRow({
                 {statuses.map((s) => (
                   <label
                     key={s.name}
-                    htmlFor={`status-opt-${spec.id}-${s.name}`}
+                    htmlFor={`status-opt-${id}-${s.name}`}
                     className="flex cursor-pointer items-center gap-2 text-sm"
                   >
                     <RadioGroupItem
-                      id={`status-opt-${spec.id}-${s.name}`}
-                      data-testid={`status-option-${spec.id}-${s.name}`}
+                      id={`status-opt-${id}-${s.name}`}
+                      data-testid={`status-option-${id}-${s.name}`}
                       value={s.name}
                     />
                     {s.name}
@@ -658,28 +752,31 @@ function SpecRow({
               </RadioGroup>
             ) : null}
             {status ? (
-              <Badge variant="secondary" data-testid={`spec-status-${spec.id}`}>
+              <Badge variant="secondary" data-testid={`spec-status-${id}`}>
                 {status}
               </Badge>
             ) : null}
           </div>
+          ) : null}
           <div
-            data-testid={`follow-up-${spec.id}`}
+            data-testid={`follow-up-${id}`}
             className="space-y-2 px-3 pb-1"
           >
-            <p data-testid={`spec-description-${spec.id}`} className="text-sm">
+            {spec ? (
+              <>
+            <p data-testid={`spec-description-${id}`} className="text-sm">
               {spec.description}
             </p>
-            {noteField("description", `follow-up-desc-${spec.id}`, `desc-${spec.id}`)}
+            {noteField("description", `follow-up-desc-${id}`, `desc-${id}`)}
             <p
-              data-testid={`spec-motivation-${spec.id}`}
+              data-testid={`spec-motivation-${id}`}
               className="text-sm text-muted-foreground"
             >
               <span className="font-medium text-foreground">Why:</span>{" "}
               {spec.motivation}
             </p>
-            {noteField("motivation", `follow-up-motivation-${spec.id}`, `motivation-${spec.id}`)}
-            <div data-testid={`spec-criteria-${spec.id}`}>
+            {noteField("motivation", `follow-up-motivation-${id}`, `motivation-${id}`)}
+            <div data-testid={`spec-criteria-${id}`}>
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 Acceptance criteria
               </p>
@@ -690,19 +787,41 @@ function SpecRow({
                   </ul>
                   {noteField(
                     `criterion-${i}`,
-                    `follow-up-criterion-${spec.id}-${i}`,
-                    `criterion-${spec.id}-${i}`,
+                    `follow-up-criterion-${id}-${i}`,
+                    `criterion-${id}-${i}`,
                   )}
                 </div>
               ))}
             </div>
             {change ? (
               <ChangeSection
-                specId={spec.id}
+                specId={id}
                 change={change}
                 noteField={noteField}
               />
             ) : null}
+              </>
+            ) : (
+              <p
+                data-testid={`spec-missing-${id}`}
+                className="text-sm text-muted-foreground"
+              >
+                This spec no longer exists.
+              </p>
+            )}
+            {orphanDefs.map((d) => (
+              <div
+                key={d.key}
+                data-testid={`orphan-feedback-${d.orphan!.suffix}`}
+                className="space-y-1"
+              >
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{d.orphan!.label}</span>
+                  {spec ? <>: {"<missing>"}</> : null}
+                </p>
+                {noteField(d.key, d.orphan!.testId, d.orphan!.suffix)}
+              </div>
+            ))}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -770,6 +889,7 @@ function LayerGroup({
           {visibleSpecs.map((spec) => (
             <SpecRow
               key={spec.id}
+              id={spec.id}
               spec={spec}
               note={followUpsById.get(spec.id)}
               statuses={statuses}
@@ -784,9 +904,11 @@ function LayerGroup({
 function SpecTree({
   data,
   filter,
+  orphanFilter,
 }: {
   data: StoreData;
   filter: SpecFilter;
+  orphanFilter: (id: string) => boolean;
 }) {
   const followUpsById = useMemo(
     () => new Map(data.followUps.map((f) => [f.id, f])),
@@ -796,6 +918,19 @@ function SpecTree({
   const statuses = Array.isArray(data.config?.status)
     ? data.config.status
     : [];
+  const orphans = useMemo(() => {
+    const ids = new Set(data.specs.map((s) => s.id));
+    return data.followUps.filter(
+      (f) => !ids.has(f.id) && hasFeedback(f) && orphanFilter(f.id),
+    );
+  }, [data.specs, data.followUps, orphanFilter]);
+  const orphanRows = orphans.length > 0 ? (
+    <div data-testid="orphan-feedback" className="space-y-2">
+      {orphans.map((f) => (
+        <SpecRow key={f.id} id={f.id} note={f} statuses={statuses} />
+      ))}
+    </div>
+  ) : null;
 
   if (Array.isArray(layers)) {
     const root = buildTree(data.specs, layers);
@@ -806,7 +941,7 @@ function SpecTree({
     const visibleTotal =
       terms.reduce((sum, term) => sum + countVisible(root.children.get(term)!, filter), 0) +
       visibleRootSpecs.length;
-    if (visibleTotal === 0) {
+    if (visibleTotal === 0 && orphans.length === 0) {
       return (
         <div data-testid="no-matches" className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           No specs match the active filters.
@@ -815,6 +950,7 @@ function SpecTree({
     }
     return (
       <div className="space-y-2">
+        {orphanRows}
         {terms.map((term) => (
           <LayerGroup
             key={term}
@@ -830,6 +966,7 @@ function SpecTree({
         {visibleRootSpecs.map((spec) => (
           <SpecRow
             key={spec.id}
+            id={spec.id}
             spec={spec}
             note={followUpsById.get(spec.id)}
             statuses={statuses}
@@ -840,7 +977,7 @@ function SpecTree({
   }
 
   const visibleSpecs = data.specs.filter(filter);
-  if (visibleSpecs.length === 0) {
+  if (visibleSpecs.length === 0 && orphans.length === 0) {
     return (
       <div data-testid="no-matches" className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
         No specs match the active filters.
@@ -850,9 +987,11 @@ function SpecTree({
 
   return (
     <div className="space-y-2">
+      {orphanRows}
       {visibleSpecs.map((spec) => (
         <SpecRow
           key={spec.id}
+          id={spec.id}
           spec={spec}
           note={followUpsById.get(spec.id)}
           statuses={statuses}
@@ -1100,6 +1239,10 @@ export default function SpecViewer() {
     () => new Set((data?.followUps ?? []).filter(hasFeedback).map((f) => f.id)),
     [data],
   );
+  const orphanFilter = useMemo(
+    () => makeOrphanFilter(statusFilter, taxonomyFilter, textQuery, changeOnly, dirtyOnly),
+    [statusFilter, taxonomyFilter, textQuery, changeOnly, dirtyOnly],
+  );
   const dirtyIds = useMemo(() => new Set(data?.dirtyIds ?? []), [data]);
   const filter = useMemo(
     () =>
@@ -1177,7 +1320,7 @@ export default function SpecViewer() {
             onChangeOnly={setChangeOnly}
             onDirtyOnly={setDirtyOnly}
           />
-          <SpecTree data={data} filter={filter} />
+          <SpecTree data={data} filter={filter} orphanFilter={orphanFilter} />
         </>
       ) : (
         <Loading />

@@ -134,22 +134,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "io-error" }, { status: 500 });
   }
   const spec = data.specs.find((s) => s.id === id);
-  if (!spec) {
-    return NextResponse.json({ error: "not-found" }, { status: 404 });
-  }
-  if (forChange) {
-    const change = specChange(spec);
-    if (!change) {
+  // Clearing a note (empty value) is always allowed, even when the spec or
+  // the field it was written for no longer exists: that is how the user
+  // removes orphaned feedback from the file. Writing text needs a live target.
+  if (value !== "") {
+    if (!spec) {
+      return NextResponse.json({ error: "not-found" }, { status: 404 });
+    }
+    if (forChange) {
+      const change = specChange(spec);
+      if (!change) {
+        return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+      }
+      if (
+        criterionKey !== undefined &&
+        !Object.keys(change.acceptance_criteria ?? {}).includes(criterionKey)
+      ) {
+        return NextResponse.json({ error: "invalid-field" }, { status: 400 });
+      }
+    } else if (criterionKey !== undefined && Number(criterionKey) >= criteriaCount(spec)) {
       return NextResponse.json({ error: "invalid-field" }, { status: 400 });
     }
-    if (
-      criterionKey !== undefined &&
-      !Object.keys(change.acceptance_criteria ?? {}).includes(criterionKey)
-    ) {
-      return NextResponse.json({ error: "invalid-field" }, { status: 400 });
-    }
-  } else if (criterionKey !== undefined && Number(criterionKey) >= criteriaCount(spec)) {
-    return NextResponse.json({ error: "invalid-field" }, { status: 400 });
   }
 
   const file = path.join(projectRoot(), FOLLOW_UP_FILE);

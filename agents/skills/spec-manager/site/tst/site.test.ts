@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 // Hermetic site tests: every run copies the fixture spec store into a fresh
 // scratch directory and launches the real launcher script against it. The
@@ -1462,6 +1462,67 @@ test(
 
         // Unchecking the filter restores the full list.
         await page.locator('[data-testid="filter-feedback"]').uncheck();
+        await waitForRowIds(page, FIXTURE_IDS);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+  180_000,
+);
+
+test(
+  "feedback for a missing criterion or a missing spec is still shown and can be cleared with 'Feedback addressed'",
+  async () => {
+    await withServer(async (root) => {
+      // Add orphaned feedback to the on-disk file: criterion #9 of an existing
+      // spec (out of range) and an entry for a spec id that does not exist.
+      const file = join(root, "spec_follow_up.yaml");
+      const doc = parse(readFileSync(file, "utf8")) as FollowUpDoc;
+      fuItem(doc, "tools_cli_run_flags-parsed")!.acceptance_criteria = {
+        0: "Unknown flags exit non-zero and print a usage message.",
+        9: "Stale criterion feedback.",
+      };
+      doc.items!.push({ id: "gone_spec_id-removed", description: "Stale spec feedback." });
+      writeFileSync(file, stringify(doc));
+
+      const page = await openPage();
+      try {
+        await waitForRowIds(page, [
+          "gone_spec_id-removed",
+          ...FIXTURE_IDS,
+        ]);
+
+        // Out-of-range criterion: the note is shown with a "<missing>" value.
+        const critSuffix = "criterion-tools_cli_run_flags-parsed-9";
+        expect(
+          await page
+            .locator(`[data-testid="follow-up-criterion-tools_cli_run_flags-parsed-9"]`)
+            .inputValue(),
+        ).toBe("Stale criterion feedback.");
+        expect(
+          await page.locator(`[data-testid="orphan-feedback-${critSuffix}"]`).innerText(),
+        ).toContain("<missing>");
+
+        // Missing spec: just the id and the feedback.
+        expect(
+          await page
+            .locator('[data-testid="follow-up-desc-gone_spec_id-removed"]')
+            .inputValue(),
+        ).toBe("Stale spec feedback.");
+
+        // Addressing both removes them from the file.
+        await page.locator(`[data-testid="follow-up-addressed-${critSuffix}"]`).click();
+        await page
+          .locator('[data-testid="follow-up-addressed-desc-gone_spec_id-removed"]')
+          .click();
+        await pollFollowUp(
+          root,
+          (d) =>
+            fuItem(d, "gone_spec_id-removed") === undefined &&
+            !("9" in (fuItem(d, "tools_cli_run_flags-parsed")?.acceptance_criteria as object)),
+          15_000,
+        );
         await waitForRowIds(page, FIXTURE_IDS);
       } finally {
         await page.close();

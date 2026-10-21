@@ -112,6 +112,24 @@ specs:
         cleared.
     status: done
 
+  - id: tooling_spec-manager_site_feedback-orphaned
+    description: "Feedback in spec_follow_up.yaml whose target no longer exists is still shown in a
+      textarea with its 'Feedback addressed' button: an out-of-range criterion index or missing
+      proposed-change field shows '<missing>' as the element's value, and a missing spec id shows
+      just the id and its feedback."
+    motivation: Specs change after feedback is written; without a place to see and retire stale notes,
+      they would sit invisibly in the follow-up file forever.
+    acceptance_criteria:
+      - A note for a criterion index beyond the spec's criteria list, or for a proposed-change field
+        that no longer exists, is shown with a label ending in '<missing>' and the note's textarea.
+      - A note for a spec id that is not in the store is shown as a row with the spec id and the
+        note textareas only.
+      - Each such note has a working 'Feedback addressed' button that removes it from
+        spec_follow_up.yaml.
+      - Missing-spec feedback is hidden by the status, proposed-change, and dirty filters and obeys
+        the taxonomy and text filters by id.
+    status: done
+
   - id: tooling_spec-manager_site_filters
     description: A filter bar along the top of the page can filter by taxonomy value, by status, and by
       free text matched against a spec's id, description, motivation, or any acceptance criterion.
