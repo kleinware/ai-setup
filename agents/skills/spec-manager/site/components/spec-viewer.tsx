@@ -728,13 +728,7 @@ function SpecRow({
     <Item data-testid={`spec-row-${id}`} className="py-4">
       <Collapsible defaultOpen className="w-full">
         <div className="flex w-full items-center gap-2 px-1 py-1">
-          <CollapsibleTrigger
-            data-testid={`spec-toggle-${id}`}
-            aria-label={`Toggle ${id}`}
-            className="group flex shrink-0 cursor-pointer items-center rounded-md p-1 hover:bg-muted dark:hover:bg-muted/50"
-          >
-            <RiArrowDownSLine className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
-          </CollapsibleTrigger>
+          <ArrowToggle testId={`spec-toggle-${id}`} label={`Toggle ${id}`} />
           <button
             type="button"
             data-testid={`spec-id-${id}`}
@@ -755,7 +749,7 @@ function SpecRow({
             Copied {id}
           </div>
         )}
-        <CollapsibleContent>
+        <CollapsibleContent className="ml-4 space-y-2 border-l pl-3">
           {spec ? (
           <div
             data-testid={`spec-status-area-${id}`}
@@ -863,6 +857,19 @@ function SpecRow({
   );
 }
 
+// The one expand/collapse arrow, used for both taxonomy groups and spec rows.
+function ArrowToggle({ testId, label }: { testId: string; label: string }) {
+  return (
+    <CollapsibleTrigger
+      data-testid={testId}
+      aria-label={label}
+      className="group flex shrink-0 cursor-pointer items-center rounded-md p-1 hover:bg-muted dark:hover:bg-muted/50"
+    >
+      <RiArrowDownSLine className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
+    </CollapsibleTrigger>
+  );
+}
+
 function LayerGroup({
   node,
   depth,
@@ -893,11 +900,11 @@ function LayerGroup({
       data-testid={`group-${pathKey}`}
       className="rounded-lg"
     >
-      <CollapsibleTrigger
-        data-testid={`group-${pathKey}-trigger`}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted dark:hover:bg-muted/50"
-      >
-        <RiArrowDownSLine className="shrink-0 text-muted-foreground data-[panel-open]:rotate-180 transition-transform" />
+      <div className="flex w-full items-center gap-2 px-1 py-1">
+        <ArrowToggle
+          testId={`group-${pathKey}-trigger`}
+          label={`Toggle ${node.term}`}
+        />
         <span className="text-sm font-medium">
           <span className="mr-2 text-xs text-muted-foreground">{layerName}</span>
           {node.term}
@@ -905,7 +912,7 @@ function LayerGroup({
         <Badge variant="outline" className="ml-auto">
           {visibleCount}
         </Badge>
-      </CollapsibleTrigger>
+      </div>
       <CollapsibleContent>
         <div className="ml-4 space-y-2 border-l pl-3">
           {terms.map((term) => (
