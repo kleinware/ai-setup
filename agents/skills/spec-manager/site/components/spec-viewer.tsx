@@ -70,7 +70,8 @@ function buildTree(specs: SpecEntry[], layers: string[]): GroupNode {
 
 // A spec matches the active filters when it matches every one of them:
 // status (when set), taxonomy branch (when set), text query (when set), and
-// having feedback (when set), having a proposed change (when set).
+// having feedback (when set), having a proposed change (when set), and being
+// dirty in the Git workspace (when set).
 type SpecFilter = (spec: SpecEntry) => boolean;
 
 function makeFilter(
@@ -80,11 +81,14 @@ function makeFilter(
   feedbackOnly: boolean,
   feedbackIds: Set<string>,
   changeOnly: boolean,
+  dirtyOnly: boolean,
+  dirtyIds: Set<string>,
 ): SpecFilter {
   const needle = query.trim().toLowerCase();
   return (spec) => {
     if (feedbackOnly && !feedbackIds.has(spec.id)) return false;
     if (changeOnly && !specChange(spec)) return false;
+    if (dirtyOnly && !dirtyIds.has(spec.id)) return false;
     if (status !== "" && spec.status !== status) return false;
     if (taxonomy !== "") {
       const prefix = taxonomy.split("/").join("_") + "_";
@@ -872,11 +876,13 @@ function FilterBar({
   textQuery,
   feedbackOnly,
   changeOnly,
+  dirtyOnly,
   onStatusFilter,
   onTaxonomyFilter,
   onTextQuery,
   onFeedbackOnly,
   onChangeOnly,
+  onDirtyOnly,
 }: {
   statuses: StatusOption[];
   taxonomyOptions: string[];
@@ -885,11 +891,13 @@ function FilterBar({
   textQuery: string;
   feedbackOnly: boolean;
   changeOnly: boolean;
+  dirtyOnly: boolean;
   onStatusFilter: (value: string) => void;
   onTaxonomyFilter: (value: string) => void;
   onTextQuery: (value: string) => void;
   onFeedbackOnly: (value: boolean) => void;
   onChangeOnly: (value: boolean) => void;
+  onDirtyOnly: (value: boolean) => void;
 }) {
   // The longest option label ("All taxonomy" plus every taxonomy branch);
   // its rendered width is measured in a hidden span in the same font as the
@@ -997,6 +1005,15 @@ function FilterBar({
         />
         Has proposed change
       </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input
+          data-testid="filter-dirty"
+          type="checkbox"
+          checked={dirtyOnly}
+          onChange={(e) => onDirtyOnly(e.target.checked)}
+        />
+        Pending git changes
+      </label>
       <label className="flex min-w-56 flex-1 items-center gap-2 text-sm">
         <span className="text-muted-foreground">Text</span>
         <Input
@@ -1027,13 +1044,14 @@ export default function SpecViewer() {
   const [data, setData] = useState<StoreData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
-  // Active filters; "" / false means no filter for that control. All five apply
+  // Active filters; "" / false means no filter for that control. All six apply
   // together (AND); clearing one restores the list subject to the rest.
   const [statusFilter, setStatusFilter] = useState("");
   const [taxonomyFilter, setTaxonomyFilter] = useState("");
   const [textQuery, setTextQuery] = useState("");
   const [feedbackOnly, setFeedbackOnly] = useState(false);
   const [changeOnly, setChangeOnly] = useState(false);
+  const [dirtyOnly, setDirtyOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1082,6 +1100,7 @@ export default function SpecViewer() {
     () => new Set((data?.followUps ?? []).filter(hasFeedback).map((f) => f.id)),
     [data],
   );
+  const dirtyIds = useMemo(() => new Set(data?.dirtyIds ?? []), [data]);
   const filter = useMemo(
     () =>
       makeFilter(
@@ -1091,8 +1110,19 @@ export default function SpecViewer() {
         feedbackOnly,
         feedbackIds,
         changeOnly,
+        dirtyOnly,
+        dirtyIds,
       ),
-    [statusFilter, taxonomyFilter, textQuery, feedbackOnly, feedbackIds, changeOnly],
+    [
+      statusFilter,
+      taxonomyFilter,
+      textQuery,
+      feedbackOnly,
+      feedbackIds,
+      changeOnly,
+      dirtyOnly,
+      dirtyIds,
+    ],
   );
 
   return (
@@ -1139,11 +1169,13 @@ export default function SpecViewer() {
             textQuery={textQuery}
             feedbackOnly={feedbackOnly}
             changeOnly={changeOnly}
+            dirtyOnly={dirtyOnly}
             onStatusFilter={setStatusFilter}
             onTaxonomyFilter={setTaxonomyFilter}
             onTextQuery={setTextQuery}
             onFeedbackOnly={setFeedbackOnly}
             onChangeOnly={setChangeOnly}
+            onDirtyOnly={setDirtyOnly}
           />
           <SpecTree data={data} filter={filter} />
         </>

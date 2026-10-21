@@ -191,6 +191,23 @@ specs:
         is visible without scrolling.
     status: done
 
+  - id: tooling_spec-manager_site_git-pending-filter
+    description: The filter bar has a 'Pending git changes' toggle that leaves only specs that differ
+      from HEAD in the Git workspace (staged, unstaged, or in an untracked spec file), and it
+      combines with the status, taxonomy, text, feedback, and proposed-change filters.
+    motivation: The user reviews just the specs that are about to be committed without scrolling the
+      whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs whose entry is new or changed relative to HEAD,
+        whether the change is staged or unstaged.
+      - Specs in an untracked spec file all count as pending git changes.
+      - Specs in a modified leaf file that were not themselves changed are not shown by the toggle.
+      - The toggle applies together with the status, taxonomy, text, feedback, and proposed-change
+        filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+      - When the project is not in a Git repository, the toggle leaves no specs.
+    status: done
+
   - id: tooling_spec-manager_site_grouped-view
     description: The page displays all specs sorted by id and grouped by their taxonomy; each named
       taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it, and

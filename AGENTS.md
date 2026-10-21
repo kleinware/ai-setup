@@ -12,6 +12,7 @@ Agent skills and repo tooling for running AI agents in isolated containers. Each
   - `devtools: ` — developer workflow scripts under `devtools/`
   - This list maps 1:1 with `ALLOWED_PREFIXES` in `.githooks/commit-msg`.
 - Spec status updates (to done) must be committed together with the change that implemented the spec, not as a separate commit.
+- Whenever a change alters behavior, consider whether it warrants modifying an existing spec or adding a new one, and do it without being asked, via the `spec-manager` skill (never edit `spec/` by hand). Commit the spec change together with the behavior change.
 - After cloning, run `./setup.sh` to install git hooks.
 - Keep this file's Layout section in sync with the repo.
 

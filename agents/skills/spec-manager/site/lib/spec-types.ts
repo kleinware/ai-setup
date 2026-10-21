@@ -78,5 +78,8 @@ export type StoreData = {
   config: StoreConfig | null;
   specs: SpecEntry[];
   followUps: FollowUpItem[];
+  // Ids of specs whose entry differs from HEAD (staged, unstaged, or in an
+  // untracked file). Empty when the project root is not in a git repository.
+  dirtyIds: string[];
   errors: string[];
 };
