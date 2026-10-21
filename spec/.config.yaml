@@ -1,8 +1,10 @@
 status:
   - name: pending
-    description: The spec is not implemented yet.
+    description: The spec is still being worked on and iterated on.
+  - name: approved
+    description: The spec as written is approved and ready for implementation.
   - name: done
-    description: The spec is implemented and verified.
+    description: The spec is implemented.
 taxonomy:
   layers:
     - area
