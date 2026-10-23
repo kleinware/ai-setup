@@ -1,0 +1,69 @@
+specs:
+  - id: tooling_spec-manager_site-filters_change-filter
+    description: The filter bar has a 'Has proposed change' toggle that leaves only specs whose meta
+      carries a supported change (meta.change), and it combines with the status, taxonomy, text, and
+      feedback filters.
+    motivation: The user reviews just the specs with proposed changes without scrolling the whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs that have a meta.change.
+      - The toggle applies together with the status, taxonomy, text, and feedback filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+    status: done
+
+  - id: tooling_spec-manager_site-filters_feedback-filter
+    description: The filter bar has a 'Has feedback' toggle that leaves only specs with at least one
+      follow-up note in spec/spec_follow_up.yaml (description, motivation, any acceptance criterion,
+      or any note on the spec's proposed change), and it combines with the status, taxonomy, and
+      text filters.
+    motivation: The user reviews just the specs they left feedback on, for example to walk through them
+      with the spec curator agent, without scrolling the whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs that have a follow-up note under them, including
+        notes on their proposed change.
+      - The toggle applies together with the status, taxonomy, and text filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+    status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: The filter bar has a 'Has feedback' toggle that leaves only specs with at least one
+              follow-up note in spec/spec_follow_up.yaml (description, motivation, any acceptance
+              criterion, or any note on the spec's proposed change), and it combines with the
+              status, taxonomy, and text filters.
+            acceptance_criteria:
+              "0": Turning on the toggle leaves only specs that have a follow-up note under them, including notes
+                on their proposed change.
+            change_status: approved
+
+  - id: tooling_spec-manager_site-filters_filters
+    description: A filter bar along the top of the page can filter by taxonomy value, by status, and by
+      free text matched against a spec's id, description, motivation, or any acceptance criterion.
+    motivation: The user reviews specs in batches - by area of the store, by state, or by topic -
+      instead of scrolling the whole list.
+    acceptance_criteria:
+      - Filtering by status leaves only specs carrying that status.
+      - Filtering by taxonomy value leaves only specs within that taxonomy branch.
+      - A text query leaves only specs whose id, description, motivation, or any acceptance
+        criterion contains the query text; matching is case-insensitive.
+      - Multiple active filters apply together, and clearing a filter restores the full list.
+      - The taxonomy filter's dropdown trigger is sized to fit the longest option in the list, not
+        just the currently selected value, so every option's label is fully visible when selected.
+    status: done
+
+  - id: tooling_spec-manager_site-filters_git-pending-filter
+    description: The filter bar has a 'Pending git changes' toggle that leaves only specs that differ
+      from HEAD in the Git workspace (staged, unstaged, or in an untracked spec file), and it
+      combines with the status, taxonomy, text, feedback, and proposed-change filters.
+    motivation: The user reviews just the specs that are about to be committed without scrolling the
+      whole list.
+    acceptance_criteria:
+      - Turning on the toggle leaves only specs whose entry is new or changed relative to HEAD,
+        whether the change is staged or unstaged.
+      - Specs in an untracked spec file all count as pending git changes.
+      - Specs in a modified leaf file that were not themselves changed are not shown by the toggle.
+      - The toggle applies together with the status, taxonomy, text, feedback, and proposed-change
+        filters.
+      - Turning the toggle off restores the list subject to the remaining filters.
+      - When the project is not in a Git repository, the toggle leaves no specs.
+    status: done

@@ -1,0 +1,177 @@
+specs:
+  - id: tooling_spec-manager_site-core_grouped-view
+    description: The page displays all specs sorted by id and grouped by their taxonomy; each named
+      taxonomy layer level can be collapsed or expanded to hide or show all spec ids under it, each
+      spec item can be collapsed by clicking an arrow icon beside its id to show only the spec id
+      with its details hidden, and clicking the spec id copies it to the clipboard.
+    motivation: The taxonomy gives the user a navigable outline of the store, and collapsing - by layer
+      or by individual spec - keeps the view manageable as the store grows; copying an id with one
+      click makes it easy to reference a spec elsewhere.
+    acceptance_criteria:
+      - Spec ids are listed in ascending order by id.
+      - Specs are grouped under their taxonomy path (area, component, section).
+      - Collapsing a layer hides all spec ids under it, and expanding restores them.
+      - Each spec item has an arrow icon beside its id, like the taxonomy layers; clicking the arrow
+        collapses the item to show only the spec id with none of its details (status, description,
+        motivation, acceptance criteria, follow-up notes), and clicking it again restores the
+        details; spec items are expanded by default.
+      - Clicking the spec id itself does not collapse or expand the item.
+      - Clicking the spec id copies the id text to the clipboard and shows a brief toast next to the
+        cursor saying the spec id was copied.
+    status: done
+
+  - id: tooling_spec-manager_site-core_launch
+    description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
+      and editor site on 0.0.0.0 port 8080, and must be run from a project root where spec/ exists.
+    motivation: Binding to all IPv4 interfaces makes the site reachable through container port
+      forwarding while the host can still restrict the published port to loopback.
+    acceptance_criteria:
+      - Running bash agents/skills/spec-manager/spec-manage-site.sh from a repo root with a spec/
+        folder starts a server, and GET http://127.0.0.1:8080/ returns the site with HTTP 200.
+      - The server binds to 0.0.0.0 on port 8080 so it is reachable through container port
+        forwarding.
+      - Running the script from a directory without a spec/ folder exits non-zero with an error
+        message.
+    status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: The spec-manager skill ships a spec-manage-site.sh script that launches the spec viewer
+              and editor site on 0.0.0.0 port 8080, and must be run from a project root where spec/
+              exists.
+            motivation: Binding to all IPv4 interfaces makes the site reachable through container port
+              forwarding while the host can still restrict the published port to loopback.
+            acceptance_criteria:
+              "1": The server binds to 0.0.0.0 on port 8080 so it is reachable through container port forwarding.
+            change_status: approved
+
+  - id: tooling_spec-manager_site-core_live-data
+    description: The site reads its data from the spec/ folder of the repo it was launched from (the
+      leaf spec files, spec/.config.yaml, and spec/spec_follow_up.yaml) and watches the filesystem,
+      pushing changes to the open page.
+    motivation: The on-disk spec store is the source of truth, so the page must show the current state
+      even while agents edit files behind it.
+    acceptance_criteria:
+      - On load, the page shows every spec from the spec/ leaf files, with follow-up notes from
+        spec/spec_follow_up.yaml where present.
+      - Editing a spec file or spec/spec_follow_up.yaml on disk while the page is open updates the
+        displayed data within a few seconds without a manual page reload.
+    status: done
+
+  - id: tooling_spec-manager_site-core_port
+    description: The spec-manage-site.sh script defaults to port 8080 and accepts a --port <X> flag to
+      override it (e.g. spec-manage-site.sh --port 3003); a 'Tip:' line about the flag is printed
+      after the site URL once the site is up, and is also printed when the server cannot start
+      because the port is already in use.
+    motivation: A user who hits a port conflict immediately sees how to pick a different port and retry.
+    acceptance_criteria:
+      - Running spec-manage-site.sh with no --port flag binds to 0.0.0.0:8080 and prints the
+        loopback site URL followed by a 'Tip:' line mentioning the --port flag.
+      - Running spec-manage-site.sh --port 3003 binds to 0.0.0.0:3003.
+      - When the port is already in use and the server fails to start, the output includes a 'Tip:'
+        line mentioning the --port flag.
+      - Servers started with different --port values can run at the same time from the same
+        installed site directory (each port uses its own Next dist directory, so the dev-server lock
+        is not shared).
+    status: done
+    meta:
+      history:
+        - diff: 2
+          change:
+            change_status: approved
+            acceptance_criteria:
+              new1: Servers started with different --port values can run at the same time from the same installed
+                site directory (each port uses its own Next dist directory, so the dev-server lock
+                is not shared).
+        - diff: 1
+          change:
+            acceptance_criteria:
+              "0": Running spec-manage-site.sh with no --port flag binds to 0.0.0.0:8080 and prints the loopback
+                site URL followed by a 'Tip:' line mentioning the --port flag.
+              "1": Running spec-manage-site.sh --port 3003 binds to 0.0.0.0:3003.
+            change_status: approved
+
+  - id: tooling_spec-manager_site-core_repo-banner
+    description: Between the header (title and 'Specs from the local spec/ store' subtitle) and the
+      filter bar, the page shows a prominent label '<repo> (<branch>)', where <repo> is the folder
+      name of the main git project (the main checkout's folder, even when the site runs from a
+      linked worktree) and <branch> is the branch currently checked out in the project the site was
+      launched from.
+    motivation: With several worktrees and branches running spec managers at once, the user needs to see
+      at a glance which repo and branch the displayed specs belong to.
+    acceptance_criteria:
+      - The label reads '<repo> (<branch>)' and is styled larger than body text, placed after the
+        header and before the filter bar.
+      - When launched from a linked git worktree, <repo> is the folder name of the main checkout,
+        not the worktree folder.
+      - The label updates live when the branch changes, without a page reload.
+      - When the project root is not in a git repository, the label shows the project root's folder
+        name with no parenthesized branch.
+      - A detached HEAD shows 'detached' as the branch.
+    status: done
+
+  - id: tooling_spec-manager_site-core_stack
+    description: "The site is a Next.js app run with bun: the React UI renders the specs and Next.js
+      serves the app and its API routes, and the look is the shadcn preset b6ok544un2."
+    motivation: Next.js gives one TypeScript codebase for UI and server-side data handling, bun is the
+      runtime, and the shadcn preset fixes the component set and visual theme up front.
+    acceptance_criteria:
+      - The site is a Next.js application whose dev server is run with bun.
+      - The UI is TypeScript React with the shadcn preset b6ok544un2 applied, either via bunx --bun
+        shadcn@latest init --preset b6ok544un2 --template next or a standard Next.js template
+        followed by bunx --bun shadcn@latest apply --preset b6ok544un2.
+      - The site's app code lives inside the spec-manager skill directory, next to
+        spec-manage-site.sh.
+    status: done
+
+  - id: tooling_spec-manager_site-core_status-edit
+    description: Each spec is shown in its own shadcn item with its id, a status radio group, its
+      description, its motivation, and its list of acceptance criteria; changing the radio value
+      updates that spec's status in its spec.yaml file.
+    motivation: Status is the only field written back to the canonical store, so the user can mark a
+      spec approved from the page and the spec store stays the single source of truth.
+    acceptance_criteria:
+      - The status radio group offers one option per status configured in spec/.config.yaml.
+      - Selecting a status in the UI writes the new status into that spec's leaf spec.yaml file on
+        disk.
+      - After the change, both the on-disk file and the UI show the new status.
+      - The 'status' label and its radio group are placed directly under the spec id, aligned to the
+        left side of the item.
+    status: done
+
+  - id: tooling_spec-manager_site-core_tab-title
+    description: The browser tab title is '<repo> (<branch>) · Spec Manager' (the main git project's
+      folder name, the current git branch in parentheses, then the app name, so the identifying part
+      survives tab truncation); without a branch it is '<repo> · Spec Manager', and it is 'Spec
+      Manager' until the store has loaded.
+    motivation: Distinguishes browser tabs of spec managers running for different repos, branches or
+      worktrees, with the distinguishing text first because narrow tabs truncate from the right.
+    acceptance_criteria:
+      - After the page loads, document.title is '<repo> (<branch>) · Spec Manager'.
+      - The title updates live when the branch changes.
+      - Without a branch the title is '<repo> · Spec Manager'; before the store loads it is 'Spec
+        Manager'.
+    status: done
+
+  - id: tooling_spec-manager_site-core_uat
+    description: "The site ships automated user acceptance tests (UAT) that run against a test repo: the
+      tests start the site, drive it like a user (change a spec's status, type follow-up text into a
+      few fields across a few spec ids, and save), and verify the changes landed on disk."
+    motivation: The UAT exercises the site end-to-end the way a real reviewer would, and proves edits
+      reach the files on disk - the whole point of the tool - while a throwaway test repo keeps the
+      tests from mutating the real spec store.
+    acceptance_criteria:
+      - "The UAT runs against a test repo: a fixture spec/ store checked in with the site's tests,
+        copied into a scratch directory per run, and separate from the repo's real spec store."
+      - The UAT starts spec-manage-site.sh against the test repo and loads the site in a headless
+        browser.
+      - The UAT changes a spec's status through the status radio in the UI and asserts the
+        corresponding spec.yaml file in the test repo on disk carries the new status.
+      - The UAT types follow-up text into fields of at least two spec ids, covering multiple field
+        types (description, motivation, and acceptance criterion), triggers the save, and asserts
+        spec_follow_up.yaml in the test repo contains an item per touched spec id with the typed
+        text and items sorted by id.
+      - The UAT is fully automated - no manual steps - and runs as part of the site's automated test
+        suite.
+    status: done

@@ -32,5 +32,8 @@ taxonomy:
     tooling:
       spec-manager:
         - specs
-        - site
         - change
+        - site-core
+        - site-feedback
+        - site-filters
+        - site-diff

@@ -1,0 +1,156 @@
+specs:
+  - id: tooling_spec-manager_site-diff_change-notes
+    description: "Every field shown in a Proposed change section (description, motivation, and each
+      acceptance criterion delta) has the same auto-saving follow-up note textarea, indicator,
+      highlight, and 'Feedback addressed' button as a spec field, and its notes are stored under a
+      change: key on the spec's item in spec/spec_follow_up.yaml."
+    motivation: Proposed changes need the same discussion with the spec curator agent as the spec
+      itself, and keeping their notes separate from the spec's notes shows which one the feedback is
+      about.
+    acceptance_criteria:
+      - "Typing in a change note saves it to the change: object of the spec's item in
+        spec/spec_follow_up.yaml, with the same pending and saved indicators as spec notes."
+      - Change criterion notes are keyed by the change's acceptance_criteria key (0, 1, new1, ...),
+        and a key that is not in the spec's meta.change is rejected.
+      - Notes on the change never alter or overwrite the spec's own notes, and the reverse.
+      - "Clearing a change note, or pressing 'Feedback addressed', removes it from the change:
+        object, and the change: object when it is empty."
+    status: done
+
+  - id: tooling_spec-manager_site-diff_change-status
+    description: The Proposed change section shows its change_status as radio buttons (pending,
+      approved), like a spec's status, and selecting one saves it to the spec's
+      meta.change.change_status in its leaf file.
+    motivation: The user approves or reverts a proposed change directly in the site, so it becomes
+      eligible for implementation without running the CLI.
+    acceptance_criteria:
+      - The section shows a pending and an approved radio button with the current change_status
+        selected, plus its badge.
+      - Selecting the other option updates the badge right away and sets meta.change.change_status
+        in the spec's leaf file, leaving every other field of the spec unchanged.
+      - A failed save reverts the selection to the stored change_status.
+      - Only pending and approved are accepted, and a spec without a meta.change is rejected.
+    status: done
+
+  - id: tooling_spec-manager_site-diff_change-view
+    description: "A spec whose meta carries a supported change (meta.change) shows a 'Proposed change'
+      section under the spec, rendered like a spec of its own: the change_status badge, the
+      replacement description and motivation when present, and each acceptance_criteria delta
+      labeled as a replacement (#N), an addition (add), or a removal."
+    motivation: Reviewers see proposed changes to accepted or done specs in the same place as the spec,
+      so they can read and react to them without opening the spec files.
+    acceptance_criteria:
+      - A spec with a meta.change shows a Proposed change section with its change_status badge; a
+        spec without one shows none.
+      - Only the supported change fields (description, motivation, acceptance_criteria,
+        change_status) are rendered; description and motivation appear only when the change replaces
+        them.
+      - Each acceptance_criteria key is listed in order (numeric indexes ascending, then new1, new2,
+        ...), a false value being shown as a removal.
+    status: done
+
+  - id: tooling_spec-manager_site-diff_git-diff-criteria-matching
+    description: Acceptance criteria are aligned between HEAD and the working tree by text similarity
+      rather than by list index, so inserting, deleting, or editing one criterion marks only that
+      criterion and edited criteria show an inline word diff.
+    motivation: Index-based pairing would show every criterion after an insertion as edited.
+    acceptance_criteria:
+      - Inserting a criterion in the middle of the list shows one fully added criterion and leaves
+        later criteria unmarked.
+      - Deleting a criterion from the middle shows that criterion fully red in place.
+      - Editing one criterion shows an inline word diff for just that criterion.
+      - A reordered but otherwise identical criterion is shown without text highlights.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-granularity
+    description: The inline diff is computed at word level, and within a changed word that is mostly
+      similar to its old form only the differing characters are marked, so adding a word or a suffix
+      at the end of a sentence marks only that addition rather than the whole line.
+    motivation: Line-based git diff marks a whole line deleted and re-added for a one-word edit, which
+      hides the real change. The similarity threshold for dropping to character level is an
+      easy-to-change tuning detail.
+    acceptance_criteria:
+      - Appending a word to the end of a sentence marks only that word as added and leaves the rest
+        of the sentence unmarked.
+      - Changing 'run' to 'runs' marks only the 's' as added.
+      - Replacing a word with an unrelated word marks the whole old word removed and the whole new
+        word added.
+      - Whitespace and punctuation changes are marked individually rather than marking the
+        surrounding words.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-inline
+    description: A spec that differs from HEAD shows its description, motivation, and each acceptance
+      criterion as a single inline diff against the HEAD value, with unchanged text on the normal
+      background, text removed from HEAD on a very light red background, text added in the working
+      tree but not staged on a very light yellow background, and text added in the index (staged) on
+      a very light green background.
+    motivation: The user reviews what changed in a spec in place, with one text per field and the same
+      single follow-up textarea below it, instead of comparing against git output elsewhere.
+    acceptance_criteria:
+      - For a field changed only in the working tree, HEAD-only text is red and the new text is
+        yellow, with no green.
+      - For a field changed only in the index, HEAD-only text is red and the new text is green, with
+        no yellow.
+      - A field identical to HEAD renders exactly as before, with no highlighted text.
+      - Each field renders as one text, not up to three labels, and its follow-up textarea and
+        Feedback addressed button are unchanged below it.
+      - The Proposed change section's description, motivation, and criteria deltas are diffed the
+        same way against their HEAD values.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-layering
+    description: "The inline diff takes HEAD as its base and layers the index and then the working tree
+      on top of it: text that is in HEAD but missing from the index or working tree is red, text
+      added by the index that is still in the working tree is green, text added only in the working
+      tree is yellow, and text added in the index but removed again in the working tree is not
+      shown."
+    motivation: The user can tell at a glance what is already staged versus still unstaged, relative to
+      what is committed; text that never existed in HEAD and no longer exists in the working tree
+      has nothing to review.
+    acceptance_criteria:
+      - When a field has both staged and unstaged edits, staged-only additions are green and the
+        unstaged additions on top of them are yellow.
+      - Text that was staged and then removed from the working tree is not rendered.
+      - Text in HEAD removed by either the staged or the unstaged edit is rendered red.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-legend
+    description: "A legend next to the filter bar explains the diff colours: red is removed from HEAD,
+      yellow is unstaged, green is staged."
+    motivation: The colour meanings are not otherwise obvious.
+    acceptance_criteria:
+      - The legend lists red, yellow, and green swatches with the labels removed, unstaged, and
+        staged.
+      - The legend is visible whenever the project is in a Git repository.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-status
+    description: When a spec's status differs from HEAD, the status radio group is unchanged and a badge
+      beside it shows the HEAD status on a red background and the current status on a yellow
+      (unstaged) or green (staged) background.
+    motivation: Status is not free text, so it cannot be diffed inline, but a status change is still a
+      pending change the user must see.
+    acceptance_criteria:
+      - A status changed only in the working tree shows the HEAD status in red and the current
+        status in yellow.
+      - A status changed in the index shows the HEAD status in red and the current status in green.
+      - A status equal to HEAD shows no badge.
+    status: approved
+
+  - id: tooling_spec-manager_site-diff_git-diff-whole-spec
+    description: A spec new in the index shows all its fields as added in green, a spec new only in the
+      working tree or in an untracked spec file shows all its fields as added in yellow, and a spec
+      present in HEAD but gone from the working tree appears as a read-only all-red entry that still
+      has its follow-up textarea and counts for the Pending git changes filter.
+    motivation: Additions and deletions of whole specs are as much a part of what is pending as edits,
+      and a deleted spec must stay visible to be reviewed.
+    acceptance_criteria:
+      - A spec added with git add shows every field as green.
+      - A spec added to a leaf file without git add, or in an untracked file, shows every field as
+        yellow.
+      - A spec deleted from the working tree but present in HEAD is listed in its taxonomy group
+        with all fields red and no editing controls except the follow-up textareas.
+      - The Pending git changes toggle also leaves deleted specs.
+      - When the project is not in a Git repository no diff highlighting is shown.
+    status: approved

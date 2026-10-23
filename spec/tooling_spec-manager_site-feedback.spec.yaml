@@ -1,0 +1,108 @@
+specs:
+  - id: tooling_spec-manager_site-feedback_feedback-addressed
+    description: Below each follow-up note textarea a 'Feedback addressed' button, with help text saying
+      it clears the note, empties that textarea and deletes its entry from spec/spec_follow_up.yaml
+      exactly as if the user had deleted the text.
+    motivation: Once the spec curator agent has dealt with a note, the user can retire it in one click
+      instead of selecting and deleting its text.
+    acceptance_criteria:
+      - Clicking the button empties the associated textarea.
+      - The corresponding field is removed from spec/spec_follow_up.yaml immediately, with the item
+        and the file removed when nothing is left, as when the text is deleted by hand.
+      - The button is disabled while the textarea is empty.
+    status: done
+
+  - id: tooling_spec-manager_site-feedback_feedback-highlight
+    description: A follow-up note textarea that holds text is visually called out (amber border and
+      tint) so the user can see at a glance where feedback was provided; empty textareas keep the
+      default look.
+    motivation: Feedback lives in many textareas across many specs, and the user needs to spot which
+      ones carry notes without reading every field.
+    acceptance_criteria:
+      - A textarea with text, whether loaded from spec/spec_follow_up.yaml or just typed, is
+        rendered with a distinct highlight.
+      - A textarea with no text has no highlight, and the highlight disappears when the text is
+        cleared.
+    status: done
+
+  - id: tooling_spec-manager_site-feedback_feedback-orphaned
+    description: "Feedback in spec_follow_up.yaml whose target no longer exists is still shown in a
+      textarea with its 'Feedback addressed' button: an out-of-range criterion index or missing
+      proposed-change field shows '<missing>' as the element's value, and a missing spec id shows
+      just the id and its feedback."
+    motivation: Specs change after feedback is written; without a place to see and retire stale notes,
+      they would sit invisibly in the follow-up file forever.
+    acceptance_criteria:
+      - A note for a criterion index beyond the spec's criteria list, or for a proposed-change field
+        that no longer exists, is shown with a label ending in '<missing>' and the note's textarea.
+      - A note for a spec id that is not in the store is shown as a row with the spec id and the
+        note textareas only.
+      - Each such note has a working 'Feedback addressed' button that removes it from
+        spec_follow_up.yaml.
+      - Missing-spec feedback is hidden by the status, proposed-change, and dirty filters and obeys
+        the taxonomy and text filters by id.
+    status: done
+
+  - id: tooling_spec-manager_site-feedback_follow-up-file
+    description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
+      an id (required, matching the spec id), an optional description string, an optional motivation
+      string, an optional acceptance_criteria object with numeric index keys and string values, and
+      an optional change object holding the same three note fields for the spec's proposed change
+      (its acceptance_criteria keyed by the meta.change criterion keys such as 0 or new1); items are
+      sorted by spec id; an id appears in the file only while it carries at least one follow-up
+      field, and the file is deleted when its last item is removed."
+    motivation: A stable, predictable file format lets the spec curator agent read the user's feedback
+      and discuss it without parsing ad-hoc structure.
+    acceptance_criteria:
+      - The file's top-level key is items:, a list of objects, and each object's id matches an
+        existing spec id.
+      - Only id is required; description and motivation are optional strings, acceptance_criteria is
+        an optional object mapping numeric index keys to string values, and change is an optional
+        object with the same optional fields, whose acceptance_criteria keys are the keys of the
+        spec's meta.change.acceptance_criteria.
+      - The items list is sorted by spec id.
+      - An id's item is removed from the file when all of its follow-up fields, including those
+        under change, are cleared.
+      - When the last item is removed, spec/spec_follow_up.yaml is deleted.
+    status: done
+    meta:
+      history:
+        - diff: 1
+          change:
+            description: "spec/spec_follow_up.yaml stores follow-up notes as a root items: list; each item has
+              an id (required, matching the spec id), an optional description string, an optional
+              motivation string, an optional acceptance_criteria object with numeric index keys and
+              string values, and an optional change object holding the same three note fields for
+              the spec's proposed change (its acceptance_criteria keyed by the meta.change criterion
+              keys such as 0 or new1); items are sorted by spec id; an id appears in the file only
+              while it carries at least one follow-up field, and the file is deleted when its last
+              item is removed."
+            acceptance_criteria:
+              "1": Only id is required; description and motivation are optional strings, acceptance_criteria is an
+                optional object mapping numeric index keys to string values, and change is an
+                optional object with the same optional fields, whose acceptance_criteria keys are
+                the keys of the spec's meta.change.acceptance_criteria.
+              "3": An id's item is removed from the file when all of its follow-up fields, including those under
+                change, are cleared.
+            change_status: approved
+
+  - id: tooling_spec-manager_site-feedback_follow-up-notes
+    description: Below each spec's description, motivation, and each acceptance criterion, a shadcn
+      textarea collects questions, concerns, and instructions for the spec curator agent; typed text
+      auto-saves to spec/spec_follow_up.yaml on blur or after 5 seconds of inactivity, with a yellow
+      pending indicator while typing that turns into a green checkmark once saved; Enter inserts a
+      line break, and the textarea grows vertically so all typed text stays visible.
+    motivation: The notes capture the user's feedback for a later discussion with the spec curator
+      agent, and auto-save records the feedback without any explicit save action; multi-line entry
+      with a vertically growing field keeps longer feedback comfortable to write and fully visible.
+    acceptance_criteria:
+      - While the user is typing, a yellow pending indicator is shown to the right of the textarea.
+      - When the textarea loses focus or 5 seconds of inactivity pass, the text is saved to
+        spec/spec_follow_up.yaml and the indicator becomes a green checkmark; pressing Enter inserts
+        a newline rather than saving, so the field can hold multi-line text.
+      - If the user clears a textarea and the save fires, the corresponding field is removed from
+        that item in spec/spec_follow_up.yaml, and the item is removed when its last field is
+        cleared.
+      - The textarea grows vertically as text is entered, so all typed text, including line breaks,
+        is visible without scrolling.
+    status: done
