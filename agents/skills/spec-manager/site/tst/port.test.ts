@@ -13,17 +13,13 @@ import { createConnection } from "node:net";
 //
 // Port 8080 may be occupied by a stale dev server left running in a dev
 // pane, so T1 adapts at runtime (success or failure branch) and the other
-// tests use non-default ports. A dev server left running in this site
-// directory also holds Next's per-directory dist lock (site/.next/dev/lock)
-// for its whole lifetime, which blocks any new `next dev` in this
-// directory on ANY port; each test deletes that lock file before spawning
-// so the new server can create its own (flocks are per-inode, the stale
-// server keeps its own fd).
+// tests use non-default ports. Next's dist lock is per distDir, which the
+// site keys by port (.next-<port>), so a server left running on one port
+// does not block a new one on another port.
 
 const SKILL_DIR = resolve(import.meta.dir, "..", "..");
 const LAUNCHER = join(SKILL_DIR, "spec-manage-site.sh");
 const FIXTURE = join(import.meta.dir, "fixtures", "fixture-repo");
-const DIST_LOCK = join(SKILL_DIR, "site", ".next", "dev", "lock");
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -37,12 +33,6 @@ function copyFixture(): string {
 
 function cleanup(root: string): void {
   rmSync(root, { recursive: true, force: true });
-}
-
-// See file header: release a stale per-directory dist lock so a new
-// `next dev` can start in this site directory.
-function releaseDistLock(): void {
-  rmSync(DIST_LOCK, { force: true });
 }
 
 type Launcher = {
@@ -196,7 +186,6 @@ test(
   async () => {
     const root = copyFixture();
     const free = await portIsFree(8080);
-    releaseDistLock();
     const launcher = spawnLauncher(root);
     try {
       if (free) {
@@ -220,7 +209,6 @@ test(
   async () => {
     const root = copyFixture();
     const free = await portIsFree(3003);
-    releaseDistLock();
     const launcher = spawnLauncher(root, ["--port", "3003"]);
     try {
       if (free) {
@@ -246,7 +234,6 @@ test(
     const port = await findFreePort();
     const dummy = await startDummyServer(port);
     const root = copyFixture();
-    releaseDistLock();
     const launcher = spawnLauncher(root, ["--port", String(port)]);
     try {
       await waitForExit(launcher.child, 90_000);

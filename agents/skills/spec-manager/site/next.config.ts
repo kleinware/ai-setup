@@ -8,6 +8,10 @@ import type { NextConfig } from "next"
 const root = path.dirname(fileURLToPath(import.meta.url))
 
 const nextConfig: NextConfig = {
+  // `next dev` takes a per-distDir lock, so two servers sharing `.next` can't
+  // run side by side even on different ports. Key the dist dir by port (set by
+  // spec-manage-site.sh) so `--port <X>` really starts an independent server.
+  distDir: process.env.SPEC_PORT ? `.next-${process.env.SPEC_PORT}` : ".next",
   // `next dev` otherwise rewrites AGENTS.md with a managed agent-rules block
   // whenever it detects an AI coding agent running it.
   agentRules: false,
