@@ -39,7 +39,27 @@
     "**/*.mts",
     ".next*/types/**/*.ts",
     ".next*/dev/types/**/*.ts",
-    ".next*/dev/dev/types/**/*.ts"
+    ".next*/dev/dev/types/**/*.ts",
+    ".next-8080/types/**/*.ts",
+    ".next-8080/dev/types/**/*.ts",
+    ".next-8081/types/**/*.ts",
+    ".next-8081/dev/types/**/*.ts",
+    ".next-8082/types/**/*.ts",
+    ".next-8082/dev/types/**/*.ts",
+    ".next-8083/types/**/*.ts",
+    ".next-8083/dev/types/**/*.ts",
+    ".next-8084/types/**/*.ts",
+    ".next-8084/dev/types/**/*.ts",
+    ".next-8085/types/**/*.ts",
+    ".next-8085/dev/types/**/*.ts",
+    ".next-8086/types/**/*.ts",
+    ".next-8086/dev/types/**/*.ts",
+    ".next-8087/types/**/*.ts",
+    ".next-8087/dev/types/**/*.ts",
+    ".next-8088/types/**/*.ts",
+    ".next-8088/dev/types/**/*.ts",
+    ".next-8089/types/**/*.ts",
+    ".next-8089/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
