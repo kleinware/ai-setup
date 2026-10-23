@@ -75,6 +75,10 @@ export type StoreConfig = {
 export type StoreData = {
   root: string;
   specDir: string;
+  // Folder name of the main git project, and its checked-out branch (null
+  // when the root is not in a git repository).
+  repoName: string;
+  branch: string | null;
   config: StoreConfig | null;
   specs: SpecEntry[];
   followUps: FollowUpItem[];

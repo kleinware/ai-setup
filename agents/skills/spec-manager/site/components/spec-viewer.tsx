@@ -1270,6 +1270,12 @@ export default function SpecViewer() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!data) return;
+    const where = data.branch ? `${data.repoName} (${data.branch})` : data.repoName;
+    document.title = `${where} \u00b7 Spec Manager`;
+  }, [data?.repoName, data?.branch]);
+
   const config = data?.config;
   const statuses = config && Array.isArray(config.status) ? config.status : [];
   const taxonomyOptions = useMemo(
@@ -1328,6 +1334,12 @@ export default function SpecViewer() {
           {live ? "live" : "connecting"}
         </div>
       </header>
+      {data ? (
+        <h2 data-testid="repo-banner" className="text-3xl font-semibold tracking-tight">
+          {data.repoName}
+          {data.branch ? ` (${data.branch})` : ""}
+        </h2>
+      ) : null}
       <Separator />
       {error ? (
         <div data-testid="error" className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">

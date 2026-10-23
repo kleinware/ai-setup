@@ -1,8 +1,10 @@
 // Server-side file watcher: watches the spec/ directory and the
-// spec_follow_up.yaml file at the project root, notifying subscribers (the
+// spec_follow_up.yaml file at the project root, and the git HEAD file (branch
+// switches), notifying subscribers (the
 // SSE route) shortly after any file changes.
 
 import { watch, type FSWatcher } from "chokidar";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { projectRoot } from "./spec-store";
@@ -44,7 +46,18 @@ export function ensureWatcher(): void {
   const root = projectRoot();
   const specDir = path.join(root, "spec");
   const followUpFile = path.join(root, "spec_follow_up.yaml");
-  const w = watch([specDir, followUpFile], {
+  const targets = [specDir, followUpFile];
+  try {
+    const gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (gitDir) targets.push(path.join(gitDir, "HEAD"));
+  } catch {
+    // not a git repository: no branch to track
+  }
+  const w = watch(targets, {
     ignoreInitial: true,
     depth: 0,
     awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },

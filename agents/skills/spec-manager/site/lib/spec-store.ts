@@ -160,6 +160,30 @@ export async function readDirtyIds(root: string, specDir: string): Promise<strin
   return [...dirty].sort();
 }
 
+// Folder name of the main git project (the main checkout even from a linked
+// worktree) and the checked-out branch. Falls back to the root's folder name
+// and a null branch outside a git repository.
+export async function readRepoInfo(root: string): Promise<{ repoName: string; branch: string | null }> {
+  const common = (
+    await git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+  )?.trim();
+  let repoName = path.basename(root);
+  if (common) {
+    const dir = path.basename(common) === ".git" ? path.dirname(common) : common;
+    repoName = path.basename(dir.replace(/\.git$/, "")) || repoName;
+  }
+  let branch: string | null = null;
+  if (common) {
+    const name = (await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]))?.trim();
+    branch = name === "HEAD" ? "detached" : name || null;
+    if (!name) {
+      // Repo with no commits: abbrev-ref fails, symbolic-ref still names the branch.
+      branch = (await git(root, ["symbolic-ref", "--short", "HEAD"]))?.trim() || null;
+    }
+  }
+  return { repoName, branch };
+}
+
 export async function readStore(): Promise<StoreData> {
   const root = projectRoot();
   const specDir = path.join(root, "spec");
@@ -222,5 +246,6 @@ export async function readStore(): Promise<StoreData> {
   specs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   followUps.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const dirtyIds = await readDirtyIds(root, specDir);
-  return { root, specDir, config, specs, followUps, dirtyIds, errors };
+  const { repoName, branch } = await readRepoInfo(root);
+  return { root, specDir, repoName, branch, config, specs, followUps, dirtyIds, errors };
 }

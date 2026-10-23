@@ -1553,3 +1553,36 @@ test(
   },
   180_000,
 );
+
+test(
+  "T-repo [tooling_spec-manager_site_repo-banner, tooling_spec-manager_site_tab-title] banner shows '<repo> (<branch>)' and the tab title carries the branch, updating live on checkout",
+  async () => {
+    const base = mkdtempSync(join(tmpdir(), "spec-site-tst-repo-"));
+    const root = join(base, "my-project");
+    const git = (...args: string[]) =>
+      spawnSync("git", args, { cwd: root, encoding: "utf-8" });
+    cpSync(FIXTURE, root, { recursive: true });
+    git("init", "-q", "-b", "alpha");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init");
+    const child = spawnLauncher(root);
+    let page: Page | null = null;
+    try {
+      await waitForHttpOk(URL, 90_000);
+      page = await openPage();
+      const banner = page.locator('[data-testid="repo-banner"]');
+      expect((await banner.innerText()).trim()).toBe("my-project (alpha)");
+      await page.waitForFunction(() => document.title === "my-project (alpha) \u00b7 Spec Manager");
+
+      git("checkout", "-q", "-b", "beta");
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="repo-banner"]')?.textContent?.trim() === "my-project (beta)",
+      );
+      await page.waitForFunction(() => document.title === "my-project (beta) \u00b7 Spec Manager");
+    } finally {
+      await page?.close();
+      await stopServer(child);
+      cleanup(base);
+    }
+  },
+  180_000,
+);
