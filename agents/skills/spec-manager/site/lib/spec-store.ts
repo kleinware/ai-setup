@@ -8,7 +8,16 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { parse } from "yaml";
 
-import type { FollowUpItem, NoteSet, SpecEntry, StoreConfig, StoreData } from "./spec-types";
+import {
+  type FollowUpItem,
+  type GitVersions,
+  type NoteSet,
+  type SpecEntry,
+  type SpecVersion,
+  type StoreConfig,
+  type StoreData,
+  specChange,
+} from "./spec-types";
 
 const execFileAsync = promisify(execFile);
 
@@ -101,63 +110,88 @@ async function git(root: string, args: string[]): Promise<string | null> {
   }
 }
 
-function specsById(doc: unknown): Map<string, string> {
-  const out = new Map<string, string>();
+function entryFromRaw(raw: Record<string, unknown>): SpecEntry {
+  return {
+    id: String(raw.id ?? ""),
+    description: String(raw.description ?? ""),
+    motivation: String(raw.motivation ?? ""),
+    acceptance_criteria: normalizeCriteria(raw.acceptance_criteria),
+    status: asString(raw.status),
+    meta: raw.meta === undefined ? undefined : raw.meta,
+  };
+}
+
+function entriesFromDoc(doc: unknown): SpecEntry[] {
   const list = (doc as { specs?: unknown })?.specs;
-  if (!Array.isArray(list)) return out;
-  for (const entry of list) {
-    const id = String((entry as { id?: unknown })?.id ?? "");
-    out.set(id, JSON.stringify(entry));
+  if (!Array.isArray(list)) return [];
+  return list.map((entry) => entryFromRaw((entry ?? {}) as Record<string, unknown>));
+}
+
+// Specs of every leaf file in the spec dir at a Git state: HEAD, or the
+// index (staged). Unparsable files are skipped.
+async function gitSpecs(
+  top: string,
+  relDir: string,
+  state: "head" | "index",
+): Promise<Map<string, SpecEntry>> {
+  const out = new Map<string, SpecEntry>();
+  const listing =
+    state === "head"
+      ? await git(top, ["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", relDir])
+      : await git(top, ["ls-files", "--cached", "-z", "--", relDir]);
+  if (listing === null) return out;
+  for (const rel of listing.split("\0")) {
+    if (!rel.endsWith(".spec.yaml")) continue;
+    const text = await git(top, ["show", state === "head" ? `HEAD:${rel}` : `:${rel}`]);
+    if (text === null) continue;
+    try {
+      for (const entry of entriesFromDoc(parse(text))) out.set(entry.id, entry);
+    } catch {
+      // unparsable version: its specs count as absent in that state
+    }
   }
   return out;
 }
 
-// Ids of specs that are new or changed relative to HEAD, judged per spec entry
-// so a dirty leaf file only flags the specs actually touched. Specs in
-// untracked files, or in a repo with no commits, all count as dirty.
-export async function readDirtyIds(root: string, specDir: string): Promise<string[]> {
-  const top = (await git(root, ["rev-parse", "--show-toplevel"]))?.trim();
-  if (!top) return [];
-  const status = await git(root, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--",
-    specDir,
-  ]);
-  if (status === null) return [];
+function toVersion(entry: SpecEntry | undefined): SpecVersion | undefined {
+  if (!entry) return undefined;
+  const criteria = entry.acceptance_criteria;
+  return {
+    description: entry.description,
+    motivation: entry.motivation,
+    acceptance_criteria: Array.isArray(criteria) ? criteria : [criteria],
+    status: entry.status,
+    change: specChange(entry),
+  };
+}
 
-  const dirty = new Set<string>();
-  const entries = status.split("\0");
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (entry.length < 4) continue;
-    const code = entry.slice(0, 2);
-    const rel = entry.slice(3);
-    if (code[0] === "R" || code[0] === "C") i++; // skip the rename source path
-    if (!rel.endsWith(".spec.yaml") || code.includes("D")) continue;
-    const abs = path.resolve(top, rel);
-    let current: Map<string, string>;
-    try {
-      current = specsById(parse(await fsp.readFile(abs, "utf8")));
-    } catch {
-      continue;
-    }
-    const head = await git(root, ["show", `HEAD:${rel}`]);
-    let before = new Map<string, string>();
-    if (head !== null && code !== "??" && code !== "A ") {
-      try {
-        before = specsById(parse(head));
-      } catch {
-        // unparsable HEAD version: treat every spec in the file as dirty
-      }
-    }
-    for (const [id, json] of current) {
-      if (before.get(id) !== json) dirty.add(id);
-    }
+// The Git side of the store: for every spec that is new, changed, or deleted
+// relative to HEAD (judged per spec entry, so a dirty leaf file only flags the
+// specs actually touched), its HEAD and index versions. Specs in untracked
+// files, or in a repo with no commits, have no HEAD version. Specs that are in
+// HEAD but gone from the working tree are returned as `deleted`.
+export async function readGitState(
+  root: string,
+  specDir: string,
+  current: SpecEntry[],
+): Promise<{ inGit: boolean; gitDiffs: Record<string, GitVersions>; deleted: SpecEntry[] }> {
+  const top = (await git(root, ["rev-parse", "--show-toplevel"]))?.trim();
+  if (!top) return { inGit: false, gitDiffs: {}, deleted: [] };
+  const relDir = path.relative(top, specDir);
+  const head = await gitSpecs(top, relDir, "head");
+  const index = await gitSpecs(top, relDir, "index");
+  const work = new Map(current.map((s) => [s.id, s]));
+
+  const gitDiffs: Record<string, GitVersions> = {};
+  const deleted: SpecEntry[] = [];
+  for (const id of new Set([...head.keys(), ...work.keys()])) {
+    const before = head.get(id);
+    const after = work.get(id);
+    if (before && after && JSON.stringify(before) === JSON.stringify(after)) continue;
+    gitDiffs[id] = { head: toVersion(before), index: toVersion(index.get(id)) };
+    if (before && !after) deleted.push({ ...before, deleted: true });
   }
-  return [...dirty].sort();
+  return { inGit: true, gitDiffs, deleted };
 }
 
 // Folder name of the main git project (the main checkout even from a linked
@@ -219,17 +253,7 @@ export async function readStore(): Promise<StoreData> {
       errors.push(`${name}: not a specs: list`);
       continue;
     }
-    for (const entry of list) {
-      const raw = entry as Record<string, unknown>;
-      specs.push({
-        id: String(raw.id ?? ""),
-        description: String(raw.description ?? ""),
-        motivation: String(raw.motivation ?? ""),
-        acceptance_criteria: normalizeCriteria(raw.acceptance_criteria),
-        status: asString(raw.status),
-        meta: raw.meta === undefined ? undefined : raw.meta,
-      });
-    }
+    specs.push(...entriesFromDoc(doc));
   }
 
   // The follow-up file lives at the project root, outside the spec directory.
@@ -245,7 +269,10 @@ export async function readStore(): Promise<StoreData> {
 
   specs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   followUps.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const dirtyIds = await readDirtyIds(root, specDir);
+  const { inGit, gitDiffs, deleted } = await readGitState(root, specDir, specs);
+  specs.push(...deleted);
+  specs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const dirtyIds = Object.keys(gitDiffs).sort();
   const { repoName, branch } = await readRepoInfo(root);
-  return { root, specDir, repoName, branch, config, specs, followUps, dirtyIds, errors };
+  return { root, specDir, repoName, branch, config, specs, followUps, inGit, gitDiffs, dirtyIds, errors };
 }

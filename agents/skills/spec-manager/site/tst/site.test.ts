@@ -14,7 +14,8 @@ const SKILL_DIR = resolve(import.meta.dir, "..", "..");
 const LAUNCHER = join(SKILL_DIR, "spec-manage-site.sh");
 const FIXTURE = join(import.meta.dir, "fixtures", "fixture-repo");
 
-const PORT = 8080;
+// Override with SPEC_SITE_TEST_PORT when 8080 is taken by a running site.
+const PORT = Number(process.env.SPEC_SITE_TEST_PORT ?? 8080);
 const URL = `http://127.0.0.1:${PORT}/`;
 
 // Spec ids in the fixture store, already in ascending order.
@@ -43,7 +44,7 @@ function cleanup(root: string): void {
 }
 
 function spawnLauncher(root: string): ChildProcess {
-  const child = spawn("bash", [LAUNCHER], {
+  const child = spawn("bash", [LAUNCHER, "--port", String(PORT)], {
     cwd: root,
     env: { ...process.env },
     stdio: ["ignore", "pipe", "pipe"],
@@ -1578,6 +1579,136 @@ test(
         () => document.querySelector('[data-testid="repo-banner"]')?.textContent?.trim() === "my-project (beta)",
       );
       await page.waitForFunction(() => document.title === "my-project (beta) \u00b7 Spec Manager");
+    } finally {
+      await page?.close();
+      await stopServer(child);
+      cleanup(base);
+    }
+  },
+  180_000,
+);
+
+test(
+  "T-diff [tooling_spec-manager_site-diff_git-diff-inline, git-diff-layering, git-diff-whole-spec, git-diff-status, git-diff-legend] specs that differ from HEAD show inline red/yellow/green diffs, new and deleted specs, status badges and a legend",
+  async () => {
+    const base = mkdtempSync(join(tmpdir(), "spec-site-tst-diff-"));
+    const root = join(base, "diff-project");
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+        cwd: root,
+        encoding: "utf-8",
+      });
+    cpSync(FIXTURE, root, { recursive: true });
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+
+    const edit = (file: string, fn: (specs: Array<Record<string, unknown>>) => Array<Record<string, unknown>>) => {
+      const path = join(root, "spec", file);
+      const doc = parse(readFileSync(path, "utf8")) as { specs: Array<Record<string, unknown>> };
+      writeFileSync(path, stringify({ specs: fn(doc.specs) }));
+    };
+    // staged: paginated gets an extra sentence and a new status
+    edit("app_ui_list.spec.yaml", (specs) =>
+      specs.map((s) =>
+        s.id === "app_ui_list_items-paginated"
+          ? { ...s, description: `${s.description} Staged words.`, status: "done" }
+          : s,
+      ),
+    );
+    git("add", "spec/app_ui_list.spec.yaml");
+    // unstaged on top of it: another sentence, and sorted's description changes
+    edit("app_ui_list.spec.yaml", (specs) =>
+      specs.map((s) =>
+        s.id === "app_ui_list_items-paginated"
+          ? { ...s, description: `${s.description} Unstaged words.` }
+          : s.id === "app_ui_list_items-sorted"
+            ? { ...s, description: "List items render in a stable order." }
+            : s,
+      ),
+    );
+    // deleted spec, and a spec in an untracked file
+    edit("app_ui_table.spec.yaml", () => []);
+    writeFileSync(
+      join(root, "spec", "app_ui_extra.spec.yaml"),
+      stringify({
+        specs: [
+          {
+            id: "app_ui_extra_brand-new",
+            description: "Brand new spec.",
+            motivation: "Because.",
+            acceptance_criteria: ["It exists."],
+            status: "pending",
+          },
+        ],
+      }),
+    );
+
+    const child = spawnLauncher(root);
+    let page: Page | null = null;
+    const kinds = (testId: string, kind: string) =>
+      page!.$$eval(`[data-testid="${testId}"] [data-diff="${kind}"]`, (els) =>
+        els.map((e) => e.textContent ?? ""),
+      );
+    try {
+      await waitForHttpOk(URL, 90_000);
+      page = await openPage();
+
+      // paginated: staged then unstaged words, plus the status change
+      const desc = "spec-description-app_ui_list_items-paginated";
+      expect((await kinds(desc, "staged")).join("")).toContain("Staged words");
+      expect((await kinds(desc, "unstaged")).join("")).toContain("Unstaged words");
+      expect(await kinds(desc, "removed")).toEqual([]);
+      expect(
+        await page.locator('[data-testid="spec-status-head-app_ui_list_items-paginated"]').innerText(),
+      ).toBe("pending");
+      expect(
+        await page
+          .locator('[data-testid="spec-status-app_ui_list_items-paginated"]')
+          .getAttribute("data-diff"),
+      ).toBe("staged");
+
+      // sorted: working-tree-only edit, HEAD words red and new words yellow
+      const sorted = "spec-description-app_ui_list_items-sorted";
+      expect((await kinds(sorted, "removed")).join("")).toContain("deterministic");
+      expect((await kinds(sorted, "staged")).length).toBe(0);
+
+      // an unchanged spec has no marks
+      expect(
+        await page.locator('[data-testid="spec-row-tools_cli_run_flags-parsed"] [data-diff]').count(),
+      ).toBe(0);
+      expect(
+        await page
+          .locator('[data-testid="spec-description-tools_cli_run_flags-parsed"]')
+          .innerText(),
+      ).toBe(SPEC_DATA["tools_cli_run_flags-parsed"].description);
+
+      // new spec in an untracked file: yellow throughout
+      const added = "spec-description-app_ui_extra_brand-new";
+      expect((await kinds(added, "unstaged")).join("")).toBe("Brand new spec.");
+
+      // deleted spec: all red, no status radios, still listed
+      const gone = "spec-description-app_ui_table_columns-resize";
+      expect((await kinds(gone, "removed")).join("")).toBe(
+        SPEC_DATA["app_ui_table_columns-resize"].description,
+      );
+      expect(
+        await page.locator('[data-testid="status-radio-app_ui_table_columns-resize"]').count(),
+      ).toBe(0);
+
+      // legend
+      expect(await page.locator('[data-testid="diff-legend"]').innerText()).toMatch(
+        /removed\s+unstaged\s+staged/,
+      );
+
+      // the pending-git-changes filter keeps the deleted and new specs
+      await page.locator('[data-testid="filter-dirty"]').check();
+      expect((await specRowIds(page)).sort()).toEqual([
+        "app_ui_extra_brand-new",
+        "app_ui_list_items-paginated",
+        "app_ui_list_items-sorted",
+        "app_ui_table_columns-resize",
+      ]);
     } finally {
       await page?.close();
       await stopServer(child);

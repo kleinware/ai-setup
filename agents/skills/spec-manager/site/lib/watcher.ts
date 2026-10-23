@@ -1,6 +1,6 @@
 // Server-side file watcher: watches the spec/ directory and the
-// spec_follow_up.yaml file at the project root, and the git HEAD file (branch
-// switches), notifying subscribers (the
+// spec_follow_up.yaml file at the project root, and the git HEAD and index files
+// (branch switches, staging, commits), notifying subscribers (the
 // SSE route) shortly after any file changes.
 
 import { watch, type FSWatcher } from "chokidar";
@@ -53,7 +53,8 @@ export function ensureWatcher(): void {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-    if (gitDir) targets.push(path.join(gitDir, "HEAD"));
+    // HEAD moves on branch switches; the index changes on staging and commits.
+    if (gitDir) targets.push(path.join(gitDir, "HEAD"), path.join(gitDir, "index"));
   } catch {
     // not a git repository: no branch to track
   }

@@ -60,7 +60,7 @@ specs:
       - Deleting a criterion from the middle shows that criterion fully red in place.
       - Editing one criterion shows an inline word diff for just that criterion.
       - A reordered but otherwise identical criterion is shown without text highlights.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-granularity
     description: The inline diff is computed at word level, and within a changed word that is mostly
@@ -77,7 +77,7 @@ specs:
         word added.
       - Whitespace and punctuation changes are marked individually rather than marking the
         surrounding words.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-inline
     description: A spec that differs from HEAD shows its description, motivation, and each acceptance
@@ -97,7 +97,7 @@ specs:
         Feedback addressed button are unchanged below it.
       - The Proposed change section's description, motivation, and criteria deltas are diffed the
         same way against their HEAD values.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-layering
     description: "The inline diff takes HEAD as its base and layers the index and then the working tree
@@ -113,7 +113,7 @@ specs:
         unstaged additions on top of them are yellow.
       - Text that was staged and then removed from the working tree is not rendered.
       - Text in HEAD removed by either the staged or the unstaged edit is rendered red.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-legend
     description: "A legend next to the filter bar explains the diff colours: red is removed from HEAD,
@@ -123,7 +123,7 @@ specs:
       - The legend lists red, yellow, and green swatches with the labels removed, unstaged, and
         staged.
       - The legend is visible whenever the project is in a Git repository.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-status
     description: When a spec's status differs from HEAD, the status radio group is unchanged and a badge
@@ -136,7 +136,7 @@ specs:
         status in yellow.
       - A status changed in the index shows the HEAD status in red and the current status in green.
       - A status equal to HEAD shows no badge.
-    status: approved
+    status: done
 
   - id: tooling_spec-manager_site-diff_git-diff-whole-spec
     description: A spec new in the index shows all its fields as added in green, a spec new only in the
@@ -153,4 +153,4 @@ specs:
         with all fields red and no editing controls except the follow-up textareas.
       - The Pending git changes toggle also leaves deleted specs.
       - When the project is not in a Git repository no diff highlighting is shown.
-    status: approved
+    status: done

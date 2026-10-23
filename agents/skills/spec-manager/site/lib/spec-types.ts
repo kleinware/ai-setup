@@ -7,7 +7,24 @@ export type SpecEntry = {
   acceptance_criteria: string | string[];
   status?: string;
   meta?: unknown;
+  // Set on a spec that is in HEAD but gone from the working tree: the entry
+  // holds its HEAD content and is shown read-only.
+  deleted?: boolean;
 };
+
+// A spec's content at one Git state (HEAD or the index), as the inline diff
+// compares it.
+export type SpecVersion = {
+  description: string;
+  motivation: string;
+  acceptance_criteria: string[];
+  status?: string;
+  change?: SpecChange;
+};
+
+// The HEAD and index versions of a spec that differs from HEAD; a version is
+// missing where the spec does not exist in that state.
+export type GitVersions = { head?: SpecVersion; index?: SpecVersion };
 
 // Saved note text for one spec, or for the spec's proposed change. Spec
 // criteria are keyed by index ("0", "1", ...); change criteria by their
@@ -82,8 +99,13 @@ export type StoreData = {
   config: StoreConfig | null;
   specs: SpecEntry[];
   followUps: FollowUpItem[];
-  // Ids of specs whose entry differs from HEAD (staged, unstaged, or in an
-  // untracked file). Empty when the project root is not in a git repository.
+  // Whether the project root is in a git repository.
+  inGit: boolean;
+  // For every spec whose entry differs from HEAD (staged, unstaged, in an
+  // untracked file, or deleted), its HEAD and index versions. Empty when the
+  // project root is not in a git repository.
+  gitDiffs: Record<string, GitVersions>;
+  // Ids of the gitDiffs, sorted.
   dirtyIds: string[];
   errors: string[];
 };

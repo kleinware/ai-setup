@@ -34,14 +34,59 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "cn";
 import {
   type FollowUpItem,
+  type GitVersions,
   type SpecChange,
   type SpecEntry,
   type StoreData,
   changeCriterionKeys,
   specChange,
 } from "@/lib/spec-types";
+import { type Segment, type SegmentKind, diffCriteria, diffText } from "@/lib/text-diff";
 
 type StatusOption = { name: string; description: string };
+
+// Background of a diffed text segment: removed from HEAD is very light red,
+// unstaged additions very light yellow, staged additions very light green;
+// unchanged text keeps the normal background.
+const DIFF_CLASS: Record<SegmentKind, string> = {
+  same: "",
+  removed: "bg-red-500/15",
+  unstaged: "bg-yellow-400/25",
+  staged: "bg-green-500/20",
+};
+
+function DiffText({ segments }: { segments: Segment[] }) {
+  return (
+    <>
+      {segments.map((seg, i) => (
+        <span key={i} data-diff={seg.kind} className={DIFF_CLASS[seg.kind]}>
+          {seg.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function DiffLegend() {
+  const items: Array<[SegmentKind, string]> = [
+    ["removed", "removed"],
+    ["unstaged", "unstaged"],
+    ["staged", "staged"],
+  ];
+  return (
+    <div data-testid="diff-legend" className="flex items-center gap-3 text-xs text-muted-foreground">
+      {items.map(([kind, label]) => (
+        <span key={kind} className="flex items-center gap-1">
+          <span
+            data-testid={`diff-legend-${kind}`}
+            className={cn("inline-block size-3 rounded-sm border", DIFF_CLASS[kind])}
+          />
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 type GroupNode = {
   term: string;
@@ -261,12 +306,24 @@ function hasFeedback(item: FollowUpItem): boolean {
 function ChangeSection({
   specId,
   change,
+  versions,
   noteField,
 }: {
   specId: string;
   change: SpecChange;
+  // Set when the spec differs from HEAD: the change is then diffed against
+  // its HEAD and index versions.
+  versions?: GitVersions;
   noteField: (key: string, textareaId: string, suffix: string) => ReactNode;
 }) {
+  const head = versions?.head?.change;
+  const index = versions?.index?.change;
+  const inline = (text: string, pick: (c: SpecChange | undefined) => string | undefined) =>
+    versions ? (
+      <DiffText segments={diffText(pick(head) ?? "", pick(index) ?? "", text)} />
+    ) : (
+      text
+    );
   const criteria = change.acceptance_criteria ?? {};
 
   // change_status editing, like the spec status: optimistic local update,
@@ -331,7 +388,7 @@ function ChangeSection({
       {change.description !== undefined ? (
         <>
           <p data-testid={`spec-change-description-${specId}`} className="text-sm">
-            {change.description}
+            {inline(change.description, (c) => c?.description)}
           </p>
           {noteField(
             "change-description",
@@ -347,7 +404,7 @@ function ChangeSection({
             className="text-sm text-muted-foreground"
           >
             <span className="font-medium text-foreground">Why:</span>{" "}
-            {change.motivation}
+            {inline(change.motivation, (c) => c?.motivation)}
           </p>
           {noteField(
             "change-motivation",
@@ -371,7 +428,14 @@ function ChangeSection({
                     <span className="mr-1 font-mono text-xs text-muted-foreground">
                       {label}
                     </span>
-                    {v === false ? <em>remove criterion</em> : v}
+                    {v === false ? (
+                      <em>remove criterion</em>
+                    ) : (
+                      inline(v, (c) => {
+                        const old = c?.acceptance_criteria?.[k];
+                        return typeof old === "string" ? old : undefined;
+                      })
+                    )}
                   </li>
                 </ul>
                 {noteField(
@@ -395,11 +459,15 @@ function SpecRow({
   spec,
   note,
   statuses,
+  versions,
 }: {
   id: string;
   spec?: SpecEntry;
   note?: FollowUpItem;
   statuses: StatusOption[];
+  // Set when the spec differs from HEAD: its HEAD and index versions, which
+  // its text is diffed against inline.
+  versions?: GitVersions;
 }) {
   const change = useMemo(() => (spec ? specChange(spec) : undefined), [spec]);
   const fieldDefs = useMemo<FieldDef[]>(() => {
@@ -712,7 +780,52 @@ function SpecRow({
       .catch(() => {});
   };
 
-  const criteria = spec ? criteriaList(spec.acceptance_criteria) : [];
+  const criteria = useMemo(
+    () => (spec ? criteriaList(spec.acceptance_criteria) : []),
+    [spec],
+  );
+
+  // Inline diff against HEAD and the index. A deleted spec holds its HEAD
+  // content, so against an empty working tree every word is removed.
+  const diff = useMemo(() => {
+    if (!spec || !versions) return undefined;
+    const deleted = spec.deleted === true;
+    const text = (pick: (v: NonNullable<GitVersions["head"]>) => string, work: string) =>
+      diffText(
+        versions.head ? pick(versions.head) : "",
+        versions.index ? pick(versions.index) : "",
+        deleted ? "" : work,
+      );
+    const rows = deleted
+      ? criteria.map((c, i) => ({ segments: [{ text: c, kind: "removed" as const }], work: i }))
+      : diffCriteria(
+          versions.head?.acceptance_criteria ?? [],
+          versions.index?.acceptance_criteria ?? [],
+          criteria,
+        );
+    return {
+      description: text((v) => v.description, spec.description),
+      motivation: text((v) => v.motivation, spec.motivation),
+      criteria: rows,
+    };
+  }, [spec, versions, criteria]);
+
+  // The criteria rows to show: diffed against Git when the spec differs from
+  // HEAD, otherwise the plain list. `work` is the criterion's index in the
+  // spec, the key its follow-up note is stored under; removed criteria have none.
+  const criteriaRows: Array<{ text?: string; segments?: Segment[]; work?: number }> = diff
+    ? diff.criteria
+    : criteria.map((text, work) => ({ text, work }));
+
+  // The status badge for a spec whose status differs from HEAD: the HEAD
+  // status in red and the current status in the colour of where it lives.
+  const statusDiff = (() => {
+    if (!spec || !versions || spec.deleted) return undefined;
+    const headStatus = versions.head?.status;
+    if (versions.head && headStatus === spec.status) return undefined;
+    const staged = versions.index?.status === spec.status;
+    return { headStatus: versions.head ? headStatus : undefined, current: staged ? "staged" : "unstaged" };
+  })();
 
   // Notes whose element is gone, shown (while they still hold text) with the
   // missing element's value as "<missing>"; for a missing spec only the
@@ -756,7 +869,7 @@ function SpecRow({
             className="flex flex-wrap items-center gap-3 px-3 pt-1"
           >
             <span className="shrink-0 text-sm text-muted-foreground">Status</span>
-            {statuses.length > 0 ? (
+            {statuses.length > 0 && !spec.deleted ? (
               <RadioGroup
                 data-testid={`status-radio-${id}`}
                 value={status}
@@ -779,8 +892,29 @@ function SpecRow({
                 ))}
               </RadioGroup>
             ) : null}
+            {statusDiff?.headStatus ? (
+              <Badge
+                variant="secondary"
+                data-testid={`spec-status-head-${id}`}
+                data-diff="removed"
+                className={DIFF_CLASS.removed}
+              >
+                {statusDiff.headStatus}
+              </Badge>
+            ) : null}
             {status ? (
-              <Badge variant="secondary" data-testid={`spec-status-${id}`}>
+              <Badge
+                variant="secondary"
+                data-testid={`spec-status-${id}`}
+                data-diff={spec.deleted ? "removed" : statusDiff?.current}
+                className={
+                  spec.deleted
+                    ? DIFF_CLASS.removed
+                    : statusDiff
+                      ? DIFF_CLASS[statusDiff.current as SegmentKind]
+                      : undefined
+                }
+              >
                 {status}
               </Badge>
             ) : null}
@@ -793,7 +927,7 @@ function SpecRow({
             {spec ? (
               <>
             <p data-testid={`spec-description-${id}`} className="text-sm">
-              {spec.description}
+              {diff ? <DiffText segments={diff.description} /> : spec.description}
             </p>
             {noteField("description", `follow-up-desc-${id}`, `desc-${id}`)}
             <p
@@ -801,23 +935,25 @@ function SpecRow({
               className="text-sm text-muted-foreground"
             >
               <span className="font-medium text-foreground">Why:</span>{" "}
-              {spec.motivation}
+              {diff ? <DiffText segments={diff.motivation} /> : spec.motivation}
             </p>
             {noteField("motivation", `follow-up-motivation-${id}`, `motivation-${id}`)}
             <div data-testid={`spec-criteria-${id}`}>
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 Acceptance criteria
               </p>
-              {criteria.map((c, i) => (
-                <div key={i} className="space-y-1">
+              {criteriaRows.map((row, k) => (
+                <div key={k} className="space-y-1">
                   <ul className="ml-4 list-disc text-sm">
-                    <li>{c}</li>
+                    <li>{row.segments ? <DiffText segments={row.segments} /> : row.text}</li>
                   </ul>
-                  {noteField(
-                    `criterion-${i}`,
-                    `follow-up-criterion-${id}-${i}`,
-                    `criterion-${id}-${i}`,
-                  )}
+                  {row.work !== undefined
+                    ? noteField(
+                        `criterion-${row.work}`,
+                        `follow-up-criterion-${id}-${row.work}`,
+                        `criterion-${id}-${row.work}`,
+                      )
+                    : null}
                 </div>
               ))}
             </div>
@@ -825,6 +961,7 @@ function SpecRow({
               <ChangeSection
                 specId={id}
                 change={change}
+                versions={spec?.deleted ? undefined : versions}
                 noteField={noteField}
               />
             ) : null}
@@ -877,6 +1014,7 @@ function LayerGroup({
   pathKey,
   followUpsById,
   statuses,
+  gitDiffs,
   filter,
 }: {
   node: GroupNode;
@@ -885,6 +1023,7 @@ function LayerGroup({
   pathKey: string;
   followUpsById: Map<string, FollowUpItem>;
   statuses: StatusOption[];
+  gitDiffs: Record<string, GitVersions>;
   filter: SpecFilter;
 }) {
   const visibleCount = countVisible(node, filter);
@@ -924,6 +1063,7 @@ function LayerGroup({
               pathKey={`${pathKey}-${term}`}
               followUpsById={followUpsById}
               statuses={statuses}
+              gitDiffs={gitDiffs}
               filter={filter}
             />
           ))}
@@ -934,6 +1074,7 @@ function LayerGroup({
               spec={spec}
               note={followUpsById.get(spec.id)}
               statuses={statuses}
+              versions={gitDiffs[spec.id]}
             />
           ))}
         </div>
@@ -1001,6 +1142,7 @@ function SpecTree({
             pathKey={term}
             followUpsById={followUpsById}
             statuses={statuses}
+            gitDiffs={data.gitDiffs}
             filter={filter}
           />
         ))}
@@ -1011,6 +1153,7 @@ function SpecTree({
             spec={spec}
             note={followUpsById.get(spec.id)}
             statuses={statuses}
+            versions={data.gitDiffs[spec.id]}
           />
         ))}
       </div>
@@ -1036,6 +1179,7 @@ function SpecTree({
           spec={spec}
           note={followUpsById.get(spec.id)}
           statuses={statuses}
+          versions={data.gitDiffs[spec.id]}
         />
       ))}
     </div>
@@ -1373,6 +1517,7 @@ export default function SpecViewer() {
             onChangeOnly={setChangeOnly}
             onDirtyOnly={setDirtyOnly}
           />
+          {data.inGit ? <DiffLegend /> : null}
           <SpecTree data={data} filter={filter} orphanFilter={orphanFilter} />
         </>
       ) : (
