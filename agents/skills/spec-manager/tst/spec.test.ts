@@ -1026,6 +1026,54 @@ function loadLeaf(dir: string, id: string): Record<string, unknown> {
   return spec as Record<string, unknown>;
 }
 
+describe("[merge-change] history entry key order", () => {
+  it("writes each meta.history entry as diff first, then change, even when the stored entries are change-first", () => {
+    const dir = freshDir("h-write-update");
+    try {
+      const meta =
+        "change: {change_status: approved, description: d2}\nhistory:\n  - change: {change_status: approved, description: d1}\n    diff: 1";
+      expect(
+        runIn(dir, [
+          "write", "--id", "a_b_c_one", "--description", "first spec", "--motivation", "m",
+          "--acceptance-criteria", "c", "--status", "done", "--meta", meta,
+        ]).code,
+      ).toBe(0);
+      const m = runIn(dir, [
+        "merge", "change", "--id", "a_b_c_one", "--final-spec",
+        "id: a_b_c_one\ndescription: d2\nmotivation: m\nacceptance_criteria: [c]\nstatus: done\nmeta: {change: {change_status: approved, description: d2}}",
+      ]);
+      expect(m.code).toBe(0);
+      const history = (loadLeaf(dir, "a_b_c_one").meta as { history: Record<string, unknown>[] }).history;
+      expect(history.map((h) => Object.keys(h))).toEqual([["diff", "change"], ["diff", "change"]]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("[upsert-change] key order", () => {
+  it("writes meta.change keys in a fixed order regardless of the order sent", () => {
+    const orders = [
+      'change_status: approved\nacceptance_criteria: {"1": "b", "0": "a", new1: "c"}\nmotivation: m\ndescription: d',
+      'description: d\nmotivation: m\nacceptance_criteria: {new1: "c", "0": "a", "1": "b"}\nchange_status: approved',
+    ];
+    const outputs = orders.map((change) => {
+      const dir = freshDir("h-write-update");
+      try {
+        expect(runIn(dir, ["upsert", "change", "--id", "a_b_c_one", "--change", change]).code).toBe(0);
+        return readFileSync(join(dir, "a_b_c.spec.yaml"), "utf8");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+    expect(outputs[0]).toBe(outputs[1]);
+    const spec = parse(outputs[0]).specs.find((x: Record<string, unknown>) => x.id === "a_b_c_one");
+    const change = spec.meta.change;
+    expect(Object.keys(change)).toEqual(["description", "motivation", "acceptance_criteria", "change_status"]);
+    expect(Object.keys(change.acceptance_criteria)).toEqual(["0", "1", "new1"]);
+  });
+});
+
 describe("[upsert-change] round trip", () => {
   it("create: read shows the exact passed fields plus change_status pending, other spec fields unchanged", () => {
     const dir = freshDir("h-write-update");

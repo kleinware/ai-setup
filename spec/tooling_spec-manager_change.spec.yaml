@@ -1,4 +1,22 @@
 specs:
+  - id: tooling_spec-manager_change_deterministic-key-order
+    description: upsert change and merge change write meta.change keys in a fixed order (description,
+      motivation, acceptance_criteria, change_status), with acceptance_criteria keys ordered numeric
+      indexes ascending then new keys, and write every meta.history entry with diff first and change
+      second, regardless of the order in which the caller passed or previously stored them.
+    motivation: So the same logical change always serializes to the same YAML and callers sending named
+      parameters in different orders do not cause diff thrashing in git history.
+    acceptance_criteria:
+      - Two upsert change calls passing the same fields in different key orders produce
+        byte-identical leaf files.
+      - meta.change keys are written in the order description, motivation, acceptance_criteria,
+        change_status.
+      - acceptance_criteria keys are written with numeric index keys ascending first, then new1,
+        new2, ... keys.
+      - Every meta.history entry is written with the diff key first and the change key second,
+        including entries that were stored change-first.
+    status: done
+
   - id: tooling_spec-manager_change_merge-change
     description: The CLI provides a merge change action that takes a spec id (--id) and the final spec
       state (--final-spec <yaml>), where the final spec state is the change data in the spec's

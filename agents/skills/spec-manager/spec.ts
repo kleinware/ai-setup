@@ -475,6 +475,44 @@ function metaForOutput(meta: unknown, includeHistory: boolean): unknown {
   return meta;
 }
 
+const CHANGE_KEY_ORDER = ["description", "motivation", "acceptance_criteria", "change_status"];
+
+// Fixed key order for meta.change so the written YAML does not depend on the order callers send keys.
+function canonicalChange(change: unknown): unknown {
+  if (typeof change !== "object" || change === null || Array.isArray(change)) return change;
+  const src = change as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of CHANGE_KEY_ORDER) {
+    if (!(key in src)) continue;
+    const v = src[key];
+    if (key === "acceptance_criteria" && typeof v === "object" && v !== null && !Array.isArray(v)) {
+      const ac = v as Record<string, unknown>;
+      const keys = Object.keys(ac);
+      const numeric = keys.filter((k) => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+      const rest = keys.filter((k) => !/^\d+$/.test(k)).sort();
+      out[key] = Object.fromEntries([...numeric, ...rest].map((k) => [k, ac[k]]));
+    } else {
+      out[key] = v;
+    }
+  }
+  for (const key of Object.keys(src)) if (!(key in out)) out[key] = src[key];
+  return out;
+}
+
+// Fixed key order for each meta.history entry: diff first, then change.
+function canonicalHistory(history: unknown): unknown {
+  if (!Array.isArray(history)) return history;
+  return history.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
+    const src = entry as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if ("diff" in src) out.diff = src.diff;
+    if ("change" in src) out.change = canonicalChange(src.change);
+    for (const key of Object.keys(src)) if (!(key in out)) out[key] = src[key];
+    return out;
+  });
+}
+
 function changeProblems(change: unknown, id: string): string[] {
   const problems: string[] = [];
   const pre = `${id}: meta.change`;
@@ -823,8 +861,12 @@ function doUpsert(args: Args, specDir: string, cfg: Config): number {
   const problems = changeProblems(mergedChange, id);
   if (problems.length) fail("schema-invalid", { id }, problems);
   const newMeta: Record<string, unknown> = metaIsMapping
-    ? { ...metaMap, change: mergedChange }
-    : { change: mergedChange };
+    ? {
+        ...metaMap,
+        change: canonicalChange(mergedChange),
+        ...("history" in metaMap ? { history: canonicalHistory(metaMap.history) } : {}),
+      }
+    : { change: canonicalChange(mergedChange) };
   const newSpec: Record<string, unknown> = { ...spec, meta: newMeta };
   const specs = (store.files[file as string].filter((s) => s.id !== id) as Record<string, unknown>[])
     .concat([newSpec]);
@@ -937,13 +979,14 @@ function doMerge(args: Args, specDir: string, cfg: Config): number {
       : [];
   const newEntry: Record<string, unknown> = {
     diff: prevHistory.length + 1,
-    change: structuredClone(preChangeMap),
+    change: canonicalChange(structuredClone(preChangeMap)),
   };
   const newMeta: Record<string, unknown> =
     typeof finalMeta === "object" && finalMeta !== null && !Array.isArray(finalMeta)
       ? { ...(finalMeta as Record<string, unknown>) }
       : {};
-  newMeta.history = [newEntry, ...prevHistory];
+  if ("change" in newMeta) newMeta.change = canonicalChange(newMeta.change);
+  newMeta.history = canonicalHistory([newEntry, ...prevHistory]);
   const newSpec: Record<string, unknown> = {
     id,
     description: final.description,
