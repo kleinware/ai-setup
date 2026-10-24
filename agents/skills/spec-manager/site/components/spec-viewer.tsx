@@ -134,7 +134,12 @@ function makeFilter(
     if (feedbackOnly && !feedbackIds.has(spec.id)) return false;
     if (changeOnly && !specChange(spec)) return false;
     if (dirtyOnly && !dirtyIds.has(spec.id)) return false;
-    if (status !== "" && spec.status !== status) return false;
+    if (status !== "" && spec.status !== status) {
+      // A proposed change is pending or approved like a spec, so those two
+      // filters also keep specs whose change has that change_status.
+      const changeStatus = specChange(spec)?.change_status;
+      if (!(changeStatus !== undefined && changeStatus === status)) return false;
+    }
     if (taxonomy !== "") {
       const prefix = taxonomy.split("/").join("_") + "_";
       if (!spec.id.startsWith(prefix)) return false;

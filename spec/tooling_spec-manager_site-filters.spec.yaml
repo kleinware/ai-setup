@@ -39,10 +39,14 @@ specs:
   - id: tooling_spec-manager_site-filters_filters
     description: A filter bar along the top of the page can filter by taxonomy value, by status, and by
       free text matched against a spec's id, description, motivation, or any acceptance criterion.
+      The pending and approved statuses also cover a spec's proposed change.
     motivation: The user reviews specs in batches - by area of the store, by state, or by topic -
-      instead of scrolling the whole list.
+      instead of scrolling the whole list. A proposed change is pending or approved just like a
+      spec, so the same filter finds both.
     acceptance_criteria:
       - Filtering by status leaves only specs carrying that status.
+      - Filtering by the pending or approved status also keeps specs whose proposed change
+        (meta.change) has that change_status, even when the spec's own status differs.
       - Filtering by taxonomy value leaves only specs within that taxonomy branch.
       - A text query leaves only specs whose id, description, motivation, or any acceptance
         criterion contains the query text; matching is case-insensitive.
